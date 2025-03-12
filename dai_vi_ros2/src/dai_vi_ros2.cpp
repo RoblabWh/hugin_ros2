@@ -112,22 +112,29 @@ namespace dai_vi
       if constexpr (std::is_same_v<imgT, dai::ImgFrame>)
       {
         auto pub = pub_cam_raw[name];
-        if (pub->get_subscription_count() + pub->get_intra_process_subscription_count() > 0)
+        if (pub->get_subscription_count() > 0)
         {
-          auto cv_img = cv_bridge::CvImage(header, "mono8", img->getFrame(false));
-          pub->publish(*cv_img.toImageMsg());
+          auto ros_msg = std::make_unique<sensor_msgs::msg::Image>();
+          ros_msg->header = header;
+          ros_msg->height = img->getHeight();
+          ros_msg->width = img->getWidth();
+          ros_msg->encoding = "mono8";
+          ros_msg->is_bigendian = false;
+          ros_msg->step = img->getWidth();
+          ros_msg->data = std::move(img->getData());
+          pub->publish(std::move(ros_msg));
         }
       }
       if constexpr (std::is_same_v<imgT, dai::EncodedFrame>)
       {
         auto pub = pub_cam_comp[name];
-        if (pub->get_subscription_count() + pub->get_intra_process_subscription_count() > 0)
+        if (pub->get_subscription_count() > 0)
         {
-          sensor_msgs::msg::CompressedImage c_img;
-          c_img.header = header;
-          c_img.format = "jpeg";
-          c_img.data = img->getData();
-          pub->publish(c_img);
+          auto ros_msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
+          ros_msg->header = header;
+          ros_msg->format = "jpeg";
+          ros_msg->data = std::move(img->getData());
+          pub->publish(std::move(ros_msg));
         }
       }
       pub_cam_info[name]->publish(img_info);
@@ -139,19 +146,19 @@ namespace dai_vi
     const auto &accel = pkt.acceleroMeter;
     const auto &gyro = pkt.gyroscope;
 
-    auto msg = sensor_msgs::msg::Imu();
-    msg.header.stamp = rclcpp::Time((accel.getTimestamp().time_since_epoch() + time_offset).count());
-    msg.header.frame_id = frame_imu;
+    auto msg = std::make_unique<sensor_msgs::msg::Imu>();
+    msg->header.stamp = rclcpp::Time((accel.getTimestamp().time_since_epoch() + time_offset).count());
+    msg->header.frame_id = frame_imu;
 
-    msg.linear_acceleration.x = accel.x;
-    msg.linear_acceleration.y = accel.y;
-    msg.linear_acceleration.z = accel.z;
+    msg->linear_acceleration.x = accel.x;
+    msg->linear_acceleration.y = accel.y;
+    msg->linear_acceleration.z = accel.z;
 
-    msg.angular_velocity.x = gyro.x;
-    msg.angular_velocity.y = gyro.y;
-    msg.angular_velocity.z = gyro.z;
+    msg->angular_velocity.x = gyro.x;
+    msg->angular_velocity.y = gyro.y;
+    msg->angular_velocity.z = gyro.z;
 
-    pub_imu->publish(msg);
+    pub_imu->publish(std::move(msg));
   }
 
 } // namespace dai_vi

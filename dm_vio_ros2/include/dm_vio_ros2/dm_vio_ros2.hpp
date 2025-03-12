@@ -66,7 +66,7 @@ namespace dmvio
         void run();
 
         void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
-        void callbackIMU(const sensor_msgs::msg::Imu &msg);
+        void callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg);
 
         // rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscriptionImage;
         message_filters::Subscriber<sensor_msgs::msg::Image> subscriptionImage;

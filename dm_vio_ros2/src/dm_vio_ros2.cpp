@@ -256,8 +256,7 @@ namespace dmvio
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
     {
         double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + camTimeOffset;
-        // TODO dont copy?
-        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(*msg_img, sensor_msgs::image_encodings::MONO8);
+        auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
         assert(cv_ptr->image.type() == CV_8U);
         assert(cv_ptr->image.channels() == 1);
 
@@ -267,21 +266,23 @@ namespace dmvio
         imuInt.addImage(std::move(undistImg), timestamp);
     }
 
-    void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu &msg)
+    void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg)
     {
         std::vector<float> accData;
-        accData.push_back(msg.linear_acceleration.x);
-        accData.push_back(msg.linear_acceleration.y);
-        accData.push_back(msg.linear_acceleration.z);
+        accData.reserve(3);
+        accData.push_back(msg->linear_acceleration.x);
+        accData.push_back(msg->linear_acceleration.y);
+        accData.push_back(msg->linear_acceleration.z);
 
         std::vector<float> gyrData;
-        gyrData.push_back(msg.angular_velocity.x);
-        gyrData.push_back(msg.angular_velocity.y);
-        gyrData.push_back(msg.angular_velocity.z);
+        gyrData.reserve(3);
+        gyrData.push_back(msg->angular_velocity.x);
+        gyrData.push_back(msg->angular_velocity.y);
+        gyrData.push_back(msg->angular_velocity.z);
 
-        double timestamp = rclcpp::Time(msg.header.stamp).seconds();
-        imuInt.addAccData(accData, timestamp);
-        imuInt.addGyrData(gyrData, timestamp);
+        const double timestamp = rclcpp::Time(msg->header.stamp).seconds();
+        imuInt.addAccData(std::move(accData), timestamp);
+        imuInt.addGyrData(std::move(gyrData), timestamp);
     }
 
     void ROS2Wrapper::run()
