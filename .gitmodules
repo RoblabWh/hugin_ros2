@@ -1,0 +1,6 @@
+[submodule "dai_vi_ros2/thirdparty/dai-vi"]
+	path = dai_vi_ros2/thirdparty/dai-vi
+	url = git@github.com:RoblabWh/dai-vi.git
+[submodule "dm_vio_ros2/thirdparty/dm-vio"]
+	path = dm_vio_ros2/thirdparty/dm-vio
+	url = git@github.com:RoblabWh/dm-vio.git
