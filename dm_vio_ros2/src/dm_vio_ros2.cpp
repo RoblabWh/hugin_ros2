@@ -23,8 +23,10 @@
 #include "dm_vio_ros2/dm_vio_ros2.hpp"
 #include "dso/util/globalCalib.h"
 #include "util/FrameShell.h"
+#include "util/TimeMeasurement.h"
 #include "GTSAMIntegration/PoseTransformationIMU.h"
 #include "cv_bridge/cv_bridge.h"
+#include "filesystem"
 
 namespace dmvio
 {
@@ -53,7 +55,7 @@ namespace dmvio
         this->declare_parameter("use_imu", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
-        this->declare_parameter("frame_world", "world");
+        this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
@@ -63,10 +65,14 @@ namespace dmvio
         bool quiet = this->get_parameter("quiet").as_bool();
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
-        frame_world = this->get_parameter("frame_world").as_string();
+        imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
+
+        std::filesystem::create_directory(imuSettings.resultsPrefix);
+        if (!std::filesystem::exists(imuSettings.resultsPrefix))
+            throw std::invalid_argument("Results path not found!");
 
         // apply params
         switch (mode)
@@ -333,11 +339,10 @@ namespace dmvio
 
         fullSystem->blockUntilMappingIsFinished();
 
-        // TODO figure this out down here
-        //  fullSystem->printResult(imuSettings.resultsPrefix + "result.txt", false, false, true);
-        //  fullSystem->printResult(imuSettings.resultsPrefix + "resultScaled.txt", false, true, true);
+        fullSystem->printResult(imuSettings.resultsPrefix + "result.txt", false, false, true);
+        fullSystem->printResult(imuSettings.resultsPrefix + "resultScaled.txt", false, true, true);
 
-        // dmvio::TimeMeasurement::saveResults(imuSettings.resultsPrefix + "timings.txt");
+        dmvio::TimeMeasurement::saveResults(imuSettings.resultsPrefix + "timings.txt");
 
         for (dso::IOWrap::Output3DWrapper *ow : fullSystem->outputWrapper)
         {
