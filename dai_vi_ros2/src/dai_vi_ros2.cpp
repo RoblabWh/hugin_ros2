@@ -1,5 +1,4 @@
 #include "dai_vi_ros2/dai_vi_ros2.hpp"
-#include "cv_bridge/cv_bridge.h"
 
 namespace dai_vi
 {
@@ -41,12 +40,14 @@ namespace dai_vi
       pub_imu = create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", rclcpp::SensorDataQoS());
     }
 
-    if (!camera_ids.empty())
+    if (!camera_ids.empty() && cam_hz > 0)
     {
       for (const auto camid : camera_ids)
       {
         const auto name = cam_prefix + std::to_string(camid);
         auto cam = sensor->createCamera(name, static_cast<dai::CameraBoardSocket>(camid));
+        if (!cam)
+          throw std::invalid_argument("Failed to create camera!");
         if (exposure > 0)
           cam->initialControl.setManualExposure(std::chrono::microseconds(exposure), 100);
 
@@ -68,26 +69,11 @@ namespace dai_vi
     }
 
     if (!sensor->buildPipeline())
-    {
-      RCLCPP_ERROR(get_logger(), "Failed to build pipeline!");
-      return;
-    }
+      throw std::invalid_argument("Failed to build pipeline!");
     if (!sensor->createDevice())
-    {
-      RCLCPP_ERROR(get_logger(), "Failed to create device!");
-      return;
-    }
-
+      throw std::runtime_error("Failed to create device!");
     if (!sensor->start())
-    {
-      RCLCPP_ERROR(get_logger(), "Failed to start sensor!");
-      return;
-    }
-  }
-
-  ROS2Wrapper::~ROS2Wrapper()
-  {
-    sensor->stop();
+      throw std::runtime_error("Failed to start sensor!");
   }
 
   template <class imgT, bool exact_stamp>

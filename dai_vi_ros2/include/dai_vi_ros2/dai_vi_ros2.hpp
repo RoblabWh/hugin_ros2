@@ -16,8 +16,6 @@ namespace dai_vi
   public:
     ROS2Wrapper(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
-    ~ROS2Wrapper();
-
   private:
     std::string cam_prefix;
     std::string frame_imu;
