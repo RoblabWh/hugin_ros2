@@ -26,27 +26,41 @@
 #include "util/TimeMeasurement.h"
 #include "GTSAMIntegration/PoseTransformationIMU.h"
 #include "cv_bridge/cv_bridge.h"
+#include "basalt/calibration/calibration.hpp"
+#include "basalt/serialization/headers_serialization.h"
 #include "filesystem"
 
 namespace dmvio
 {
+    inline void setTransformFromSE3(const Sophus::SE3d &se3, geometry_msgs::msg::Transform &transform)
+    {
+        const auto translation = se3.translation();
+        const auto rotation = se3.unit_quaternion();
+        transform.translation.x = translation.x();
+        transform.translation.y = translation.y();
+        transform.translation.z = translation.z();
+        transform.rotation.x = rotation.x();
+        transform.rotation.y = rotation.y();
+        transform.rotation.z = rotation.z();
+        transform.rotation.w = rotation.w();
+    }
+
+    inline void setPoseFromSE3(const Sophus::SE3d &se3, geometry_msgs::msg::Pose &pose)
+    {
+        const auto translation = se3.translation();
+        const auto rotation = se3.unit_quaternion();
+        pose.position.x = translation.x();
+        pose.position.y = translation.y();
+        pose.position.z = translation.z();
+        pose.orientation.x = rotation.x();
+        pose.orientation.y = rotation.y();
+        pose.orientation.z = rotation.z();
+        pose.orientation.w = rotation.w();
+    }
 
     ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
-        : Node("dm_vio", options), syncImage(this->subscriptionImage, this->subscriptionImageInfo, 10), imuInt(frameContainer, nullptr)
+        : Node("dm_vio", options), syncImage(this->subscriptionImage, this->subscriptionImageInfo, rclcpp::SensorDataQoS().depth()), imuInt(frameContainer, nullptr)
     {
-        this->subscriptionImage.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile());
-        this->subscriptionImageInfo.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile());
-        this->syncImage.registerCallback(std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1, std::placeholders::_2));
-        this->subscriptionIMU = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1));
-
-        this->systemStatePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
-        this->dmvioPosePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOPose>("pose_dmvio", rclcpp::SensorDataQoS());
-        this->unscaledPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_raw", rclcpp::SensorDataQoS());
-        // While we publish the metric pose for convenience we don't recommend using it.
-        // The reason is that the scale used for generating it might change over time.
-        // Usually it is better to save the trajectory and multiply all of it with the newest scale.
-        this->metricPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_metric", rclcpp::SensorDataQoS());
-
         // declare params
         this->declare_parameter("calibration", "");
         this->declare_parameter("camera_index", 0);
@@ -56,6 +70,9 @@ namespace dmvio
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
+        this->declare_parameter("frame_odom", "odom");
+        this->declare_parameter("frame_imu", "imu");
+        this->declare_parameter("frame_camera", "camera");
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
@@ -66,6 +83,9 @@ namespace dmvio
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
         imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
+        this->frame_odom = this->get_parameter("frame_odom").as_string();
+        this->frame_imu = this->get_parameter("frame_imu").as_string();
+        this->frame_camera = this->get_parameter("frame_camera").as_string();
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
@@ -74,7 +94,16 @@ namespace dmvio
         if (!std::filesystem::exists(imuSettings.resultsPrefix))
             throw std::invalid_argument("Results path not found!");
 
+        std::ifstream calib_file(calib_path);
+        if (!calib_file.good())
+            throw std::invalid_argument("Calibration file not found!");
+
         // apply params
+        basalt::Calibration<double> calib;
+        cereal::JSONInputArchive archive(calib_file);
+        archive(calib);
+        camTimeOffset = calib.cam_time_offset_ns * 1e-9;
+
         switch (mode)
         {
         case 0:
@@ -138,7 +167,57 @@ namespace dmvio
 
         this->imuCalibration.loadFromFile(calib_path);
 
-        // setup system
+        // setup ros
+        const auto setup_time = get_clock()->now();
+
+        auto sub_options_imu = rclcpp::SubscriptionOptions();
+        sub_options_imu.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        auto sub_options_image = rclcpp::SubscriptionOptions();
+        sub_options_image.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+        this->subscriptionImage.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+        this->subscriptionImageInfo.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+        this->syncImage.registerCallback(std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1, std::placeholders::_2));
+        this->subscriptionIMU = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1), sub_options_imu);
+
+        this->systemStatePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
+        this->dmvioPosePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOPose>("pose_dmvio", rclcpp::SensorDataQoS());
+        this->unscaledPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_raw", rclcpp::SensorDataQoS());
+        // While we publish the metric pose for convenience we don't recommend using it.
+        // The reason is that the scale used for generating it might change over time.
+        // Usually it is better to save the trajectory and multiply all of it with the newest scale.
+        this->metricPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_metric", rclcpp::SensorDataQoS());
+
+        this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
+        this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+
+        auto tf_imu_camera = geometry_msgs::msg::TransformStamped();
+        tf_imu_camera.header.stamp = setup_time;
+        tf_imu_camera.header.frame_id = frame_imu;
+        tf_imu_camera.child_frame_id = frame_camera;
+
+        setTransformFromSE3(calib.T_i_c[dso::multiCameraIndex], tf_imu_camera.transform);
+        tfbc_imu_camera->sendTransform(tf_imu_camera);
+
+        tf_imu_camera.child_frame_id += "_calibration";
+        tfsbc_imu_camera->sendTransform(tf_imu_camera);
+
+        auto static_pub_options = rclcpp::PublisherOptions();
+        static_pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
+        this->cameraInfoPublisher = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", rclcpp::QoS(1).reliable().transient_local(), static_pub_options);
+        auto camera_info = std::make_unique<sensor_msgs::msg::CameraInfo>();
+        camera_info->header.stamp = setup_time;
+        camera_info->header.frame_id = frame_camera;
+        camera_info->width = dso::wG[0];
+        camera_info->height = dso::hG[0];
+        camera_info->k[0] = dso::KG[0](0, 0);
+        camera_info->k[2] = dso::KG[0](0, 2);
+        camera_info->k[4] = dso::KG[0](1, 1);
+        camera_info->k[5] = dso::KG[0](1, 2);
+        camera_info->k[8] = 1.0;
+        this->cameraInfoPublisher->publish(std::move(camera_info));
+
+        // setup vio
         this->frameSkipping = std::make_unique<dmvio::FrameSkippingStrategy>(this->frameSkippingSettings);
 
         this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings);
@@ -187,33 +266,22 @@ namespace dmvio
     {
         dm_vio_msgs::msg::DMVIOState msg;
         msg.header.stamp = get_clock()->now();
-        msg.header.frame_id = frame_world;
+        msg.header.frame_id = frame_camera;
         msg.state = static_cast<int>(systemStatus);
         systemStatePublisher->publish(msg);
         lastSystemStatus = systemStatus;
-    }
-
-    void setMsgFromSE3(geometry_msgs::msg::Pose &poseMsg, const Sophus::SE3d &pose)
-    {
-        poseMsg.position.x = pose.translation()[0];
-        poseMsg.position.y = pose.translation()[1];
-        poseMsg.position.z = pose.translation()[2];
-        poseMsg.orientation.x = pose.so3().unit_quaternion().x();
-        poseMsg.orientation.y = pose.so3().unit_quaternion().y();
-        poseMsg.orientation.z = pose.so3().unit_quaternion().z();
-        poseMsg.orientation.w = pose.so3().unit_quaternion().w();
     }
 
     void ROS2Wrapper::publishCamPose(dso::FrameShell *frame, dso::CalibHessian *HCalib)
     {
         dm_vio_msgs::msg::DMVIOPose msg;
         msg.header.stamp = rclcpp::Time(frame->timestamp * 1e9);
-        msg.header.frame_id = frame_world;
+        msg.header.frame_id = frame_odom;
 
         auto &camToWorld = frame->camToWorld;
 
         geometry_msgs::msg::Pose &poseMsg = msg.pose;
-        setMsgFromSE3(poseMsg, camToWorld);
+        setPoseFromSE3(camToWorld, poseMsg);
 
         // Also publish unscaled pose on its own (e.g. for visualization in Rviz).
         geometry_msgs::msg::PoseStamped unscaledMsg;
@@ -234,9 +302,11 @@ namespace dmvio
                 // Transform to metric imu to world. Note that we need to use the inverse as transformDSOToIMU expects
                 // worldToCam as an input!
                 Sophus::SE3d imuToWorld(transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
-                setMsgFromSE3(scaledMsg.pose, imuToWorld);
+                setPoseFromSE3(imuToWorld, scaledMsg.pose);
 
                 metricPosePublisher->publish(scaledMsg);
+
+                // TODO publish tf
             }
             else
             {
@@ -252,7 +322,7 @@ namespace dmvio
                 msg.rotation_metric_to_dso.y = gravityDirection.unit_quaternion().y();
                 msg.rotation_metric_to_dso.z = gravityDirection.unit_quaternion().z();
                 msg.rotation_metric_to_dso.w = gravityDirection.unit_quaternion().w();
-                setMsgFromSE3(msg.imu_to_cam, transformDSOToIMU->getT_cam_imu());
+                setPoseFromSE3(transformDSOToIMU->getT_cam_imu(), msg.imu_to_cam);
             }
         }
 

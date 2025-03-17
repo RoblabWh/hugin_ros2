@@ -20,15 +20,13 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "dm_vio_msgs/msg/dmvio_pose.hpp"
 #include "dm_vio_msgs/msg/dmvio_state.hpp"
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/static_transform_broadcaster.h"
+#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
 
 namespace dmvio
 {
-
-    // We publish 3 topics by default:
-    // dmvio/frame_tracked: DMVIOPoseMsg
-    // dmvio/unscaled_pose: PoseStamped
-    // dmvio/metric_poses: PoseStamped
-    // For more details on these see the README.md file.
     class ROS2Wrapper : public dso::IOWrap::Output3DWrapper, public rclcpp::Node
     {
     public:
@@ -68,7 +66,6 @@ namespace dmvio
         void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
         void callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg);
 
-        // rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscriptionImage;
         message_filters::Subscriber<sensor_msgs::msg::Image> subscriptionImage;
         message_filters::Subscriber<image_info_msgs::msg::ImageInfo> subscriptionImageInfo;
         message_filters::TimeSynchronizer<sensor_msgs::msg::Image, image_info_msgs::msg::ImageInfo> syncImage;
@@ -78,7 +75,11 @@ namespace dmvio
         rclcpp::Publisher<dm_vio_msgs::msg::DMVIOPose>::SharedPtr dmvioPosePublisher;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr unscaledPosePublisher, metricPosePublisher;
 
-        std::string frame_world;
+        std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
+        std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr cameraInfoPublisher;
+
+        std::string frame_odom, frame_imu, frame_camera;
 
         // Protects transformDSOToIMU.
         std::mutex mutex;
@@ -86,7 +87,7 @@ namespace dmvio
         std::thread worker;
 
         std::unique_ptr<dmvio::TransformDSOToIMU> transformDSOToIMU;
-        bool scaleAvailable = false; // True iff transformDSOToIMU contains a valid scale.
+        bool scaleAvailable = false; // True if transformDSOToIMU contains a valid scale.
         std::atomic<dmvio::SystemStatus> lastSystemStatus;
 
         dmvio::FrameContainer frameContainer;
@@ -102,7 +103,6 @@ namespace dmvio
 
         bool stopSystem = false;
         size_t start = 2;
-        //TODO read offset from basalt calibration
         double camTimeOffset = 0.0;
     };
 

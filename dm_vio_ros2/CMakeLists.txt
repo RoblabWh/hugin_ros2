@@ -16,6 +16,8 @@ find_package(image_info_msgs REQUIRED)
 find_package(dm_vio_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 # build thirdparty
 set(WITH_OPENCV OFF CACHE BOOL "Disable OpenCV" FORCE)
@@ -39,6 +41,8 @@ ament_target_dependencies(
   "image_info_msgs"
   "dm_vio_msgs"
   "cv_bridge"
+  "tf2"
+  "tf2_ros"
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE dmvio)
 
