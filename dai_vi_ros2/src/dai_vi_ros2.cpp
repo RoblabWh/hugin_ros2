@@ -60,7 +60,7 @@ namespace dai_vi
       sensor->cam_hz = cam_hz;
       sensor->encode = !pub_raw;
       if (exposure > 0)
-        sensor->start_skip = 0;
+        sensor->start_skip = 1;
 
       if (pub_raw)
         sensor->fn_proc_synced = std::bind(&ROS2Wrapper::publish_images<dai::ImgFrame>, this, std::placeholders::_1);
