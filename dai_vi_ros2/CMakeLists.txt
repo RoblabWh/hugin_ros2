@@ -11,7 +11,6 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(image_info_msgs REQUIRED)
-find_package(depthai CONFIG REQUIRED)
 
 # build thirdparty
 set(BUILD_EXEC OFF CACHE BOOL "Only build the library" FORCE)
@@ -31,7 +30,7 @@ ament_target_dependencies(
   "sensor_msgs"
   "image_info_msgs"
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE dai_vi depthai::opencv)
+target_link_libraries(${PROJECT_NAME} PRIVATE dai_vi)
 
 # generate node
 rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "dai_vi::ROS2Wrapper" EXECUTABLE ${PROJECT_NAME}_node EXECUTOR SingleThreadedExecutor)
