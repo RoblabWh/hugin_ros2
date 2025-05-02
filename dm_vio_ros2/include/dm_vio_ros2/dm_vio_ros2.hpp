@@ -61,6 +61,12 @@ namespace dmvio
 
         // In case you want to additionally publish pointclouds or keyframe poses you need to override Output3DWrapper::publishKeyframes
 
+        virtual void pushLiveFrame(dso::FrameHessian *image) override;
+
+        virtual bool needPushDepthImage() override { return true; };
+        virtual void pushDepthImage(dso::MinimalImageB3 *image, dso::FrameHessian *KF) override;
+        virtual void pushDepthImageFloat(dso::MinimalImageF *image, dso::FrameHessian *KF) override;
+
     private:
         void reset_system();
 
@@ -78,6 +84,7 @@ namespace dmvio
         rclcpp::Publisher<dm_vio_msgs::msg::DMVIOPose>::SharedPtr dmvioPosePublisher;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr unscaledPosePublisher;
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr metricPosePublisher;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr liveImagePublisher, liveDepthPublisher, liveDepthFloatPublisher;
 
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera;

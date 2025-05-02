@@ -212,6 +212,10 @@ namespace dmvio
         // Usually it is better to save the trajectory and multiply all of it with the newest scale.
         this->metricPosePublisher = this->create_publisher<nav_msgs::msg::Odometry>("pose_metric", rclcpp::SensorDataQoS());
 
+        this->liveImagePublisher = this->create_publisher<sensor_msgs::msg::Image>("image_live", rclcpp::SensorDataQoS());
+        this->liveDepthPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
+        this->liveDepthFloatPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
+
         this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
         this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
@@ -373,6 +377,68 @@ namespace dmvio
         lastTimestamp = frame->timestamp;
         lastCamToWorld = camToWorld;
         dmvioPosePublisher->publish(std::move(msg));
+
+    void ROS2Wrapper::pushLiveFrame(dso::FrameHessian *image)
+    {
+        if (liveImagePublisher->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<sensor_msgs::msg::Image>();
+            msg->header.stamp = stampFromDSO(image->shell->timestamp);
+            msg->header.frame_id = frame_camera;
+            msg->height = dso::hG[0];
+            msg->width = dso::wG[0];
+            msg->encoding = "mono8";
+            msg->is_bigendian = false;
+            msg->step = dso::wG[0];
+            msg->data.resize(msg->width * msg->height);
+
+            for (size_t i = 0; i < msg->data.size(); ++i)
+            {
+                msg->data[i] = image->dI[i][0] * 0.8 > 255.0f ? 255 : static_cast<uint8_t>(image->dI[i][0] * 0.8);
+            }
+
+            liveImagePublisher->publish(std::move(msg));
+        }
+    }
+
+    void ROS2Wrapper::pushDepthImage(dso::MinimalImageB3 *image, dso::FrameHessian *KF)
+    {
+        if (liveDepthPublisher->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<sensor_msgs::msg::Image>();
+            msg->header.stamp = stampFromDSO(KF->shell->timestamp);
+            msg->header.frame_id = frame_camera;
+            msg->height = image->h;
+            msg->width = image->w;
+            msg->encoding = "bgr8";
+            msg->is_bigendian = false;
+            msg->step = image->w * 3;
+            msg->data.resize(msg->width * msg->height * 3);
+
+            std::memcpy(msg->data.data(), image->data, msg->data.size());
+
+            liveDepthPublisher->publish(std::move(msg));
+        }
+    }
+
+    void ROS2Wrapper::pushDepthImageFloat(dso::MinimalImageF *image, dso::FrameHessian *KF)
+    {
+        if (liveDepthFloatPublisher->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<sensor_msgs::msg::Image>();
+            msg->header.stamp = stampFromDSO(KF->shell->timestamp);
+            msg->header.frame_id = frame_camera;
+            msg->height = image->h;
+            msg->width = image->w;
+            msg->encoding = "32FC1";
+            msg->is_bigendian = false;
+            msg->step = image->w * 4;
+            msg->data.resize(msg->width * msg->height * 4);
+
+            std::memcpy(msg->data.data(), image->data, msg->data.size());
+
+            liveDepthFloatPublisher->publish(std::move(msg));
+        }
     }
 
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
