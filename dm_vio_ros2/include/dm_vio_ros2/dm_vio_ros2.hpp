@@ -24,6 +24,7 @@
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 
 namespace dmvio
 {
@@ -61,6 +62,8 @@ namespace dmvio
         // In case you want to additionally publish pointclouds or keyframe poses you need to override Output3DWrapper::publishKeyframes
 
     private:
+        void reset_system();
+
         void run();
 
         void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
@@ -73,7 +76,8 @@ namespace dmvio
 
         rclcpp::Publisher<dm_vio_msgs::msg::DMVIOState>::SharedPtr systemStatePublisher;
         rclcpp::Publisher<dm_vio_msgs::msg::DMVIOPose>::SharedPtr dmvioPosePublisher;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr unscaledPosePublisher, metricPosePublisher;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr unscaledPosePublisher;
+        rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr metricPosePublisher;
 
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera;
@@ -89,6 +93,8 @@ namespace dmvio
         std::unique_ptr<dmvio::TransformDSOToIMU> transformDSOToIMU;
         bool scaleAvailable = false; // True if transformDSOToIMU contains a valid scale.
         std::atomic<dmvio::SystemStatus> lastSystemStatus;
+        double lastTimestamp = 0.0;
+        Sophus::SE3d lastCamToWorld;
 
         dmvio::FrameContainer frameContainer;
         dmvio::IMUInterpolator imuInt;

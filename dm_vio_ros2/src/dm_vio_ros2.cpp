@@ -25,7 +25,7 @@
 #include "util/FrameShell.h"
 #include "util/TimeMeasurement.h"
 #include "GTSAMIntegration/PoseTransformationIMU.h"
-#include "cv_bridge/cv_bridge.h"
+#include "cv_bridge/cv_bridge.hpp"
 #include "basalt/calibration/calibration.hpp"
 #include "basalt/serialization/headers_serialization.h"
 #include "filesystem"
@@ -56,6 +56,30 @@ namespace dmvio
         pose.orientation.y = rotation.y();
         pose.orientation.z = rotation.z();
         pose.orientation.w = rotation.w();
+    }
+
+    inline rclcpp::Time stampFromDSO(double timestamp)
+    {
+        return std::move(rclcpp::Time(timestamp * 1e9));
+    }
+
+    void ROS2Wrapper::reset_system()
+    {
+        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings);
+
+        if (dso::setting_photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Photometric calibration not available! Need to use mode=1 or mode=2");
+            throw std::invalid_argument("Photometric calibration not available!");
+        }
+
+        if (this->undistorter->photometricUndist != nullptr)
+        {
+            this->fullSystem->setGammaFunction(this->undistorter->photometricUndist->getG());
+        }
+
+        this->fullSystem->outputWrapper.push_back(this->frameSkipping.get());
+        this->fullSystem->outputWrapper.push_back(this);
     }
 
     ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
@@ -186,7 +210,7 @@ namespace dmvio
         // While we publish the metric pose for convenience we don't recommend using it.
         // The reason is that the scale used for generating it might change over time.
         // Usually it is better to save the trajectory and multiply all of it with the newest scale.
-        this->metricPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_metric", rclcpp::SensorDataQoS());
+        this->metricPosePublisher = this->create_publisher<nav_msgs::msg::Odometry>("pose_metric", rclcpp::SensorDataQoS());
 
         this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
         this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
@@ -219,23 +243,7 @@ namespace dmvio
 
         // setup vio
         this->frameSkipping = std::make_unique<dmvio::FrameSkippingStrategy>(this->frameSkippingSettings);
-
-        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings);
-
-        if (dso::setting_photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Photometric calibration not available! Need to use mode=1 or mode=2");
-            throw std::invalid_argument("Photometric calibration not available!");
-        }
-
-        if (this->undistorter->photometricUndist != nullptr)
-        {
-            fullSystem->setGammaFunction(this->undistorter->photometricUndist->getG());
-        }
-
-        this->fullSystem->outputWrapper.push_back(this->frameSkipping.get());
-        this->fullSystem->outputWrapper.push_back(this);
-
+        this->reset_system();
         this->worker = std::thread(std::bind(&ROS2Wrapper::run, this));
     }
 
@@ -270,47 +278,83 @@ namespace dmvio
         msg.state = static_cast<int>(systemStatus);
         systemStatePublisher->publish(msg);
         lastSystemStatus = systemStatus;
+        if (systemStatus == dmvio::SystemStatus::VISUAL_INERTIAL)
+        {
+            RCLCPP_INFO(get_logger(), "System status: VISUAL_INERTIAL");
+        }
+        else if (systemStatus == dmvio::SystemStatus::VISUAL_ONLY)
+        {
+            RCLCPP_INFO(get_logger(), "System status: VISUAL_ONLY");
+        }
+        else if (systemStatus == dmvio::SystemStatus::VISUAL_INIT)
+        {
+            RCLCPP_INFO(get_logger(), "System status: VISUAL_INIT");
+        }
+        else
+        {
+            RCLCPP_ERROR(get_logger(), "System status: UNKNOWN");
+        }
     }
 
     void ROS2Wrapper::publishCamPose(dso::FrameShell *frame, dso::CalibHessian *HCalib)
     {
-        dm_vio_msgs::msg::DMVIOPose msg;
-        msg.header.stamp = rclcpp::Time(frame->timestamp * 1e9);
-        msg.header.frame_id = frame_odom;
+        auto msg = std::make_unique<dm_vio_msgs::msg::DMVIOPose>();
+        msg->header.stamp = stampFromDSO(frame->timestamp);
+        msg->header.frame_id = frame_odom;
 
-        auto &camToWorld = frame->camToWorld;
-
-        geometry_msgs::msg::Pose &poseMsg = msg.pose;
-        setPoseFromSE3(camToWorld, poseMsg);
+        const auto &camToWorld = frame->camToWorld;
+        setPoseFromSE3(camToWorld, msg->pose);
 
         // Also publish unscaled pose on its own (e.g. for visualization in Rviz).
-        geometry_msgs::msg::PoseStamped unscaledMsg;
-        unscaledMsg.header = msg.header;
-        unscaledMsg.pose = poseMsg;
-        unscaledPosePublisher->publish(unscaledMsg);
+        auto unscaledMsg = std::make_unique<geometry_msgs::msg::PoseStamped>();
+        unscaledMsg->header = msg->header;
+        unscaledMsg->pose = msg->pose;
+        unscaledPosePublisher->publish(std::move(unscaledMsg));
 
         {
             std::unique_lock<std::mutex> lk(mutex);
             if (transformDSOToIMU && scaleAvailable)
             {
-                msg.scale = transformDSOToIMU->getScale();
-
-                // Publish scaled pose.
-                geometry_msgs::msg::PoseStamped scaledMsg;
-                scaledMsg.header = msg.header;
+                msg->scale = transformDSOToIMU->getScale();
 
                 // Transform to metric imu to world. Note that we need to use the inverse as transformDSOToIMU expects
                 // worldToCam as an input!
-                Sophus::SE3d imuToWorld(transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
-                setPoseFromSE3(imuToWorld, scaledMsg.pose);
+                const auto imuToWorld = Sophus::SE3d(transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
 
-                metricPosePublisher->publish(scaledMsg);
+                if (lastTimestamp > 0)
+                {
+                    // Publish odometry
+                    auto odomMsg = std::make_unique<nav_msgs::msg::Odometry>();
+                    odomMsg->header = msg->header;
+                    odomMsg->child_frame_id = frame_imu;
+
+                    setPoseFromSE3(imuToWorld, odomMsg->pose.pose);
+                    // TODO set covariance
+
+                    // Compute velocity
+                    const auto lastImuToWorld = Sophus::SE3d(transformDSOToIMU->transformPose(lastCamToWorld.inverse().matrix()));
+
+                    const auto diffTransform = lastImuToWorld.inverse() * imuToWorld;
+                    const auto diffTimestamp = frame->timestamp - lastTimestamp;
+                    const auto linVel = diffTransform.translation() / diffTimestamp;
+                    const auto angVel = diffTransform.so3().log() / diffTimestamp;
+
+                    odomMsg->twist.twist.linear.x = linVel.x();
+                    odomMsg->twist.twist.linear.y = linVel.y();
+                    odomMsg->twist.twist.linear.z = linVel.z();
+                    odomMsg->twist.twist.angular.x = angVel.x();
+                    odomMsg->twist.twist.angular.y = angVel.y();
+                    odomMsg->twist.twist.angular.z = angVel.z();
+                    // TODO set covariance
+
+                    metricPosePublisher->publish(std::move(odomMsg));
+                }
 
                 // TODO publish tf
             }
             else
             {
-                msg.scale = std::numeric_limits<double>::quiet_NaN();
+                msg->scale = std::numeric_limits<double>::quiet_NaN();
                 if (transformDSOToIMU)
                     assert(transformDSOToIMU->getScale() == 1.0);
             }
@@ -318,23 +362,23 @@ namespace dmvio
             if (transformDSOToIMU)
             {
                 Sophus::SO3d gravityDirection = transformDSOToIMU->getR_dsoW_metricW();
-                msg.rotation_metric_to_dso.x = gravityDirection.unit_quaternion().x();
-                msg.rotation_metric_to_dso.y = gravityDirection.unit_quaternion().y();
-                msg.rotation_metric_to_dso.z = gravityDirection.unit_quaternion().z();
-                msg.rotation_metric_to_dso.w = gravityDirection.unit_quaternion().w();
-                setPoseFromSE3(transformDSOToIMU->getT_cam_imu(), msg.imu_to_cam);
+                msg->rotation_metric_to_dso.x = gravityDirection.unit_quaternion().x();
+                msg->rotation_metric_to_dso.y = gravityDirection.unit_quaternion().y();
+                msg->rotation_metric_to_dso.z = gravityDirection.unit_quaternion().z();
+                msg->rotation_metric_to_dso.w = gravityDirection.unit_quaternion().w();
+                setPoseFromSE3(transformDSOToIMU->getT_cam_imu(), msg->imu_to_cam);
             }
         }
 
-        dmvioPosePublisher->publish(msg);
+        lastTimestamp = frame->timestamp;
+        lastCamToWorld = camToWorld;
+        dmvioPosePublisher->publish(std::move(msg));
     }
 
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
     {
         double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + camTimeOffset;
         auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
-        assert(cv_ptr->image.type() == CV_8U);
-        assert(cv_ptr->image.channels() == 1);
 
         dso::MinimalImageB minImg((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
         std::unique_ptr<dso::ImageAndExposure> undistImg(undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
@@ -391,16 +435,7 @@ namespace dmvio
             if (this->fullSystem->initFailed || this->fullSystem->isLost || dso::setting_fullResetRequested)
             {
                 RCLCPP_INFO(get_logger(), "RESETTING!");
-                std::vector<dso::IOWrap::Output3DWrapper *> wraps = this->fullSystem->outputWrapper;
-                this->fullSystem.reset();
-                for (dso::IOWrap::Output3DWrapper *ow : wraps)
-                    ow->reset();
-
-                this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings);
-                if (this->undistorter->photometricUndist != nullptr)
-                    this->fullSystem->setGammaFunction(this->undistorter->photometricUndist->getG());
-                this->fullSystem->outputWrapper = wraps;
-
+                this->reset_system();
                 dso::setting_fullResetRequested = false;
             }
 
