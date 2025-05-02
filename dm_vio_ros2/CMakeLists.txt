@@ -19,6 +19,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # build thirdparty
 set(WITH_OPENCV OFF CACHE BOOL "Disable OpenCV" FORCE)
@@ -45,6 +46,7 @@ ament_target_dependencies(
   "cv_bridge"
   "tf2"
   "tf2_ros"
+  "tf2_geometry_msgs"
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE dmvio)
 

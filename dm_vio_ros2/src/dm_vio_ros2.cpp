@@ -20,15 +20,15 @@
  * along with DM-VIO. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "filesystem"
 #include "dm_vio_ros2/dm_vio_ros2.hpp"
-#include "dso/util/globalCalib.h"
 #include "util/FrameShell.h"
 #include "util/TimeMeasurement.h"
 #include "GTSAMIntegration/PoseTransformationIMU.h"
 #include "cv_bridge/cv_bridge.hpp"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "basalt/calibration/calibration.hpp"
 #include "basalt/serialization/headers_serialization.h"
-#include "filesystem"
 
 namespace dmvio
 {
@@ -95,8 +95,10 @@ namespace dmvio
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
         this->declare_parameter("frame_odom", "odom");
+        this->declare_parameter("frame_base", "base");
         this->declare_parameter("frame_imu", "imu");
         this->declare_parameter("frame_camera", "camera");
+        this->declare_parameter("publish_tf", true);
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
@@ -109,7 +111,9 @@ namespace dmvio
         imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->frame_odom = this->get_parameter("frame_odom").as_string();
         this->frame_imu = this->get_parameter("frame_imu").as_string();
+        this->frame_base = this->get_parameter("frame_base").as_string();
         this->frame_camera = this->get_parameter("frame_camera").as_string();
+        this->publishTf = this->get_parameter("publish_tf").as_bool();
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
@@ -216,19 +220,26 @@ namespace dmvio
         this->liveDepthPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
         this->liveDepthFloatPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
 
-        this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
-        this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+        if (publishTf)
+        {
+            this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
+            this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
-        auto tf_imu_camera = geometry_msgs::msg::TransformStamped();
-        tf_imu_camera.header.stamp = setup_time;
-        tf_imu_camera.header.frame_id = frame_imu;
-        tf_imu_camera.child_frame_id = frame_camera;
+            auto tf_imu_camera = geometry_msgs::msg::TransformStamped();
+            tf_imu_camera.header.stamp = setup_time;
+            tf_imu_camera.header.frame_id = frame_imu;
+            tf_imu_camera.child_frame_id = frame_camera;
 
-        setTransformFromSE3(calib.T_i_c[dso::multiCameraIndex], tf_imu_camera.transform);
-        tfbc_imu_camera->sendTransform(tf_imu_camera);
+            setTransformFromSE3(calib.T_i_c[dso::multiCameraIndex], tf_imu_camera.transform);
+            tfbc_imu_camera->sendTransform(tf_imu_camera);
 
-        tf_imu_camera.child_frame_id += "_calibration";
-        tfsbc_imu_camera->sendTransform(tf_imu_camera);
+            tf_imu_camera.child_frame_id += "_calibration";
+            tfsbc_imu_camera->sendTransform(tf_imu_camera);
+
+            this->tfbc_odom_base = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+            this->tfBuffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+            this->tfListener = std::make_unique<tf2_ros::TransformListener>(*this->tfBuffer, this, false);
+        }
 
         auto static_pub_options = rclcpp::PublisherOptions();
         static_pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
@@ -354,7 +365,33 @@ namespace dmvio
                     metricPosePublisher->publish(std::move(odomMsg));
                 }
 
-                // TODO publish tf
+                if (publishTf)
+                {
+                    try
+                    {
+                        const auto tf_imu_base = this->tfBuffer->lookupTransform(frame_base, frame_imu, tf2::TimePointZero);
+
+                        tf2::Transform tf2_imu_base, tf2_imu_odom, tf2_odom_base;
+
+                        tf2::fromMsg(tf_imu_base.transform, tf2_imu_base);
+
+                        geometry_msgs::msg::Transform tf_imu_odom;
+                        setTransformFromSE3(imuToWorld.inverse(), tf_imu_odom);
+                        tf2::fromMsg(tf_imu_odom, tf2_imu_odom);
+
+                        tf2_odom_base = (tf2_imu_base * tf2_imu_odom).inverse();
+
+                        geometry_msgs::msg::TransformStamped tf_odom_base;
+                        tf_odom_base.header = msg->header;
+                        tf_odom_base.child_frame_id = frame_base;
+                        tf2::toMsg(tf2_odom_base, tf_odom_base.transform);
+                        this->tfbc_odom_base->sendTransform(tf_odom_base);
+                    }
+                    catch (const tf2::TransformException &e)
+                    {
+                        RCLCPP_WARN_ONCE(get_logger(), "Transform exception: %s", e.what());
+                    }
+                }
             }
             else
             {

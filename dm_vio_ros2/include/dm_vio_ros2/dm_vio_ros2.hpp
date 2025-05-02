@@ -22,6 +22,8 @@
 #include "dm_vio_msgs/msg/dmvio_state.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -87,10 +89,13 @@ namespace dmvio
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr liveImagePublisher, liveDepthPublisher, liveDepthFloatPublisher;
 
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
-        std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera;
+        std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera, tfbc_odom_base;
         rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr cameraInfoPublisher;
+        std::unique_ptr<tf2_ros::Buffer> tfBuffer;
+        std::unique_ptr<tf2_ros::TransformListener> tfListener;
 
-        std::string frame_odom, frame_imu, frame_camera;
+        std::string frame_odom, frame_base, frame_imu, frame_camera;
+        bool publishTf;
 
         // Protects transformDSOToIMU.
         std::mutex mutex;
