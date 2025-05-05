@@ -65,9 +65,9 @@ namespace dmvio
 
     void ROS2Wrapper::reset_system()
     {
-        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings);
+        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings, &dsoSettings);
 
-        if (dso::setting_photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
+        if (this->dsoSettings.photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
         {
             RCLCPP_ERROR(this->get_logger(), "Photometric calibration not available! Need to use mode=1 or mode=2");
             throw std::invalid_argument("Photometric calibration not available!");
@@ -83,7 +83,7 @@ namespace dmvio
     }
 
     ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
-        : Node("dm_vio", options), syncImage(this->subscriptionImage, this->subscriptionImageInfo, rclcpp::SensorDataQoS().depth()), imuInt(frameContainer, nullptr)
+        : Node("dm_vio", options), syncImage(this->subscriptionImage, this->subscriptionImageInfo, rclcpp::SensorDataQoS().depth()), imuInt(frameContainer, nullptr), mainSettings(&dsoSettings)
     {
         // declare params
         this->declare_parameter("calibration", "");
@@ -102,7 +102,7 @@ namespace dmvio
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
-        dso::multiCameraIndex = this->get_parameter("camera_index").as_int();
+        this->dsoSettings.multiCameraIndex = this->get_parameter("camera_index").as_int();
         int mode = this->get_parameter("mode").as_int();
         int preset = this->get_parameter("preset").as_int();
         bool quiet = this->get_parameter("quiet").as_bool();
@@ -139,16 +139,16 @@ namespace dmvio
             break;
         case 1:
             RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITHOUT CALIBRATION!");
-            dso::setting_photometricCalibration = 0;
-            dso::setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-            dso::setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.photometricCalibration = 0;
+            this->dsoSettings.affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             break;
         case 2:
             RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITH PERFECT IMAGES!");
-            dso::setting_photometricCalibration = 0;
-            dso::setting_affineOptModeA = -1; //-1: fix. >=0: optimize (with prior, if > 0).
-            dso::setting_affineOptModeB = -1; //-1: fix. >=0: optimize (with prior, if > 0).
-            dso::setting_minGradHistAdd = 3;
+            this->dsoSettings.photometricCalibration = 0;
+            this->dsoSettings.affineOptModeA = -1; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.affineOptModeB = -1; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.minGradHistAdd = 3;
             break;
         case 3:
             // This mode is useful because mode 0 assumes that exposure is available (as it adds a strong prior to
@@ -156,8 +156,8 @@ namespace dmvio
             // This mode uses vignette (and response), but still fully optimizes brightness changes, hence it is
             // appropriate for sensors without exposure time but with a calibrated vignette.
             RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITH CALIBRATION, BUT NO OR INACCURATE EXPOSURE!");
-            dso::setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-            dso::setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+            this->dsoSettings.affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             break;
         default:
             throw std::invalid_argument("PHOTOMETRIC MODE UNKNOWN!");
@@ -167,33 +167,34 @@ namespace dmvio
 
         if (quiet)
         {
-            dso::setting_debugout_runquiet = true;
+            this->dsoSettings.debugout_runquiet = true;
             RCLCPP_INFO(get_logger(), "QUIET MODE, I'll shut up!");
         }
         if (nolog)
         {
-            dso::setting_logStuff = false;
+            this->dsoSettings.logStuff = false;
             RCLCPP_INFO(get_logger(), "DISABLE LOGGING!");
         }
         if (use_imu)
         {
             RCLCPP_INFO(get_logger(), "Enabling IMU integration!");
-            dso::setting_useIMU = true;
+            this->dsoSettings.useIMU = true;
         }
         else
         {
             RCLCPP_INFO(get_logger(), "Disabling IMU integration!");
-            dso::setting_useIMU = false;
+            this->dsoSettings.useIMU = false;
         }
 
-        this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(calib_path));
+        this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(&dsoSettings, calib_path));
 
         dso::setGlobalCalib(
             this->undistorter->getSize()[0],
             this->undistorter->getSize()[1],
-            this->undistorter->getK().cast<float>());
+            this->undistorter->getK().cast<float>(),
+            &dsoSettings);
 
-        this->imuCalibration.loadFromFile(calib_path);
+        this->imuCalibration.loadFromFile(calib_path, this->dsoSettings.multiCameraIndex);
 
         // setup ros
         const auto setup_time = get_clock()->now();
@@ -230,7 +231,7 @@ namespace dmvio
             tf_imu_camera.header.frame_id = frame_imu;
             tf_imu_camera.child_frame_id = frame_camera;
 
-            setTransformFromSE3(calib.T_i_c[dso::multiCameraIndex], tf_imu_camera.transform);
+            setTransformFromSE3(calib.T_i_c[this->dsoSettings.multiCameraIndex], tf_imu_camera.transform);
             tfbc_imu_camera->sendTransform(tf_imu_camera);
 
             tf_imu_camera.child_frame_id += "_calibration";
@@ -414,6 +415,7 @@ namespace dmvio
         lastTimestamp = frame->timestamp;
         lastCamToWorld = camToWorld;
         dmvioPosePublisher->publish(std::move(msg));
+    }
 
     void ROS2Wrapper::pushLiveFrame(dso::FrameHessian *image)
     {
@@ -535,11 +537,11 @@ namespace dmvio
             if (this->fullSystem->isLost)
                 RCLCPP_DEBUG(this->get_logger(), "Lost!");
 
-            if (this->fullSystem->initFailed || this->fullSystem->isLost || dso::setting_fullResetRequested)
+            if (this->fullSystem->initFailed || this->fullSystem->isLost || this->dsoSettings.fullResetRequested)
             {
                 RCLCPP_INFO(get_logger(), "RESETTING!");
                 this->reset_system();
-                dso::setting_fullResetRequested = false;
+                this->dsoSettings.fullResetRequested = false;
             }
 
             ++image_id;

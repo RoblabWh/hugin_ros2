@@ -114,6 +114,7 @@ namespace dmvio
         std::unique_ptr<dso::FullSystem> fullSystem;
         std::unique_ptr<dmvio::FrameSkippingStrategy> frameSkipping;
 
+        dso::Settings dsoSettings;
         dmvio::MainSettings mainSettings;
         dmvio::IMUCalibration imuCalibration;
         dmvio::IMUSettings imuSettings;
