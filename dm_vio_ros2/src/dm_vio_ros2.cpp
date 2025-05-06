@@ -188,11 +188,11 @@ namespace dmvio
 
         this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(&dsoSettings, calib_path));
 
-        dso::setGlobalCalib(
+        dsoSettings.calibG = dso::GlobalCalib(
             this->undistorter->getSize()[0],
             this->undistorter->getSize()[1],
             this->undistorter->getK().cast<float>(),
-            &dsoSettings);
+            this->dsoSettings.pyrLevelsUsed);
 
         this->imuCalibration.loadFromFile(calib_path, this->dsoSettings.multiCameraIndex);
 
@@ -248,12 +248,12 @@ namespace dmvio
         auto camera_info = std::make_unique<sensor_msgs::msg::CameraInfo>();
         camera_info->header.stamp = setup_time;
         camera_info->header.frame_id = frame_camera;
-        camera_info->width = dso::wG[0];
-        camera_info->height = dso::hG[0];
-        camera_info->k[0] = dso::KG[0](0, 0);
-        camera_info->k[2] = dso::KG[0](0, 2);
-        camera_info->k[4] = dso::KG[0](1, 1);
-        camera_info->k[5] = dso::KG[0](1, 2);
+        camera_info->width = this->dsoSettings.calibG.wG[0];
+        camera_info->height = this->dsoSettings.calibG.hG[0];
+        camera_info->k[0] = this->dsoSettings.calibG.KG[0](0, 0);
+        camera_info->k[2] = this->dsoSettings.calibG.KG[0](0, 2);
+        camera_info->k[4] = this->dsoSettings.calibG.KG[0](1, 1);
+        camera_info->k[5] = this->dsoSettings.calibG.KG[0](1, 2);
         camera_info->k[8] = 1.0;
         this->cameraInfoPublisher->publish(std::move(camera_info));
 
@@ -424,11 +424,11 @@ namespace dmvio
             auto msg = std::make_unique<sensor_msgs::msg::Image>();
             msg->header.stamp = stampFromDSO(image->shell->timestamp);
             msg->header.frame_id = frame_camera;
-            msg->height = dso::hG[0];
-            msg->width = dso::wG[0];
+            msg->height = this->dsoSettings.calibG.hG[0];
+            msg->width = this->dsoSettings.calibG.wG[0];
             msg->encoding = "mono8";
             msg->is_bigendian = false;
-            msg->step = dso::wG[0];
+            msg->step = this->dsoSettings.calibG.wG[0];
             msg->data.resize(msg->width * msg->height);
 
             for (size_t i = 0; i < msg->data.size(); ++i)
