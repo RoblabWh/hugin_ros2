@@ -1,0 +1,144 @@
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from .utils import radians
+
+####################
+# Common Arguments #
+####################
+
+## Sensors
+cameras = DeclareLaunchArgument(
+    "cameras",
+    default_value="0",
+    description="Comma separated list of camera ids",
+)
+cam_hz = DeclareLaunchArgument(
+    "cam_hz",
+    default_value="20",
+    description="Camera frequency",
+)
+imu_hz = DeclareLaunchArgument(
+    "imu_hz",
+    default_value="200",
+    description="IMU frequency",
+)
+calibration = DeclareLaunchArgument(
+    "calibration", description="Path to basalt calibration.json"
+)
+
+## TF2
+publish_tf = DeclareLaunchArgument(
+    "publish_tf", default_value="true", description="Publish TF"
+)
+frame_odom = DeclareLaunchArgument(
+    "frame_odom", default_value="odom", description="frame_id of VIO"
+)
+frame_base = DeclareLaunchArgument(
+    "frame_base",
+    default_value="base_link",
+    description="frame_id of robot base link",
+)
+frame_imu = DeclareLaunchArgument(
+    "frame_imu", default_value="imu", description="frame_id of IMU"
+)
+
+
+##############
+# Static TFs #
+##############
+
+
+tf_base_imu = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    name="tf_base_imu",
+    arguments=[
+        # TODO adjust translation
+        "--x",
+        "0.021",
+        "--y",
+        "-0.021",
+        "--z",
+        "0.038",
+        "--roll",
+        str(radians(180)),
+        "--yaw",
+        str(radians(90)),
+        "--frame-id",
+        LaunchConfiguration("frame_base"),
+        "--child-frame-id",
+        LaunchConfiguration("frame_imu"),
+    ],
+    output="screen",
+)
+
+
+######################
+### Configurations ###
+######################
+
+dai_source = [
+    cameras,
+    cam_hz,
+    imu_hz,
+    frame_imu,
+]
+
+bag_source = [
+    DeclareLaunchArgument(
+        "input",
+        description="Path to input bag",
+    ),
+    DeclareLaunchArgument(
+        "loop",
+        description="Play bag in loop",
+        default_value="false",
+    ),
+]
+
+dm_vio_nodes = [
+    cameras,
+    calibration,
+    DeclareLaunchArgument("mode", default_value="0", description="DM-VIO mode"),
+    DeclareLaunchArgument(
+        "preset",
+        # TODO maybe set to 1 for realtime
+        default_value="0",
+        description="DM-VIO preset",
+    ),
+    DeclareLaunchArgument("enable_imu", default_value="true", description="Enable IMU"),
+    DeclareLaunchArgument(
+        "quiet", default_value="true", description="DM-VIO disable console output"
+    ),
+    DeclareLaunchArgument(
+        "nolog", default_value="true", description="DM-VIO disable logging"
+    ),
+    publish_tf,
+    frame_odom,
+    frame_base,
+    frame_imu,
+    tf_base_imu,
+]
+
+dai_recorder = [
+    cameras,
+    cam_hz,
+    imu_hz,
+    DeclareLaunchArgument(
+        "output",
+        description="Path to output bag",
+    ),
+    # Increase default value by alot to give rosbag enough time to write cached data to disk
+    DeclareLaunchArgument(
+        "sigterm_timeout",
+        default_value=str(60 * 60),
+        description="Seconds to wait until sigterm is send",
+    ),
+]
+
+kalman_filter = [
+    cameras,
+    frame_odom,
+    frame_base,
+]

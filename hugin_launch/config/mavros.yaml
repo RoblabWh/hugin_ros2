@@ -1,0 +1,116 @@
+# --- system plugins ---
+
+# sys_status
+/**/sys:
+  ros__parameters:
+    min_voltage: [15.0]   # diagnostics min voltage, use a vector i.e. [16.2, 16.0] for multiple batteries, up-to 10 are supported
+                          # to achieve the same on a ROS launch file do: <rosparam param="sys/min_voltage">[16.2, 16.0]</rosparam>
+    disable_diag: false   # disable all sys_status diagnostics, except heartbeat
+    heartbeat_rate: 1.0   # send heartbeat rate in Hertz
+    heartbeat_mav_type: "ONBOARD_CONTROLLER"
+    conn_timeout: 4.0    # heartbeat timeout in seconds
+
+# sys_time
+/**/time:
+  ros__parameters:
+    time_ref_source: "fcu"    # time_reference source
+    timesync_mode: MAVLINK
+    timesync_avg_alpha: 0.6   # timesync averaging factor
+    timesync_rate: 10.0       # TIMESYNC rate in Hertz (feature disabled if 0.0)
+    system_time_rate: 1.0     # send system time to FCU rate in Hertz (disabled if 0.0)
+
+# --- mavros plugins (alphabetical order) ---
+
+# command
+/**/cmd:
+  ros__parameters:
+    use_comp_id_system_control: false   # quirk for some old FCUs
+
+# global_position
+/**/global_position:
+  ros__parameters:
+    frame_id: "map"               # origin frame
+    child_frame_id: "base_link"   # body-fixed frame
+    rot_covariance: 99999.0       # covariance for attitude?
+    gps_uere: 1.0                 # User Equivalent Range Error (UERE) of GPS sensor (m)
+    use_relative_alt: true        # use relative altitude for local coordinates
+    tf.send: false                # send TF?
+    tf.frame_id: "map"            # TF frame_id
+    tf.global_frame_id: "earth"   # TF earth frame_id
+    tf.child_frame_id: "base_link"  # TF child_frame_id
+
+# imu_pub
+/**/imu:
+  ros__parameters:
+    frame_id: "base_link"
+    # need find actual values
+    linear_acceleration_stdev: 0.0003
+    angular_velocity_stdev: 0.0003490659  # 0.02 degrees
+    orientation_stdev: 1.0
+    magnetic_stdev: 0.0
+
+# local_position
+/**/local_position:
+  ros__parameters:
+    frame_id: "map"
+    tf.send: false
+    tf.frame_id: "map"
+    tf.child_frame_id: "base_link"
+    tf.send_fcu: false
+
+# --- mavros extras plugins (same order) ---
+
+# fake_gps
+/**/fake_gps:
+  ros__parameters:
+    # select data source
+    use_mocap: true               # ~mocap/pose
+    mocap_transform: false        # ~mocap/tf instead of pose
+    mocap_withcovariance: false   # ~mocap/pose uses PoseWithCovarianceStamped Message
+    use_vision: false             # ~vision (pose)
+    use_hil_gps: true
+    gps_id: 4
+    # origin (default: Zürich)
+    geo_origin.lat: 47.3667       # latitude [degrees]
+    geo_origin.lon: 8.5500        # longitude [degrees]
+    geo_origin.alt: 408.0         # altitude (height over the WGS-84 ellipsoid) [meters]
+    eph: 2.0
+    epv: 2.0
+    horiz_accuracy: 0.5
+    vert_accuracy: 0.5
+    speed_accuracy: 0.0
+    satellites_visible: 6     # virtual number of visible satellites
+    fix_type: 3               # type of GPS fix (default: 3D)
+    tf.listen: false
+    tf.send: false            # send TF?
+    tf.frame_id: "map"        # TF frame_id
+    tf.child_frame_id: "fix"  # TF child_frame_id
+    tf.rate_limit: 10.0       # TF rate
+    gps_rate: 5.0             # GPS data publishing rate
+
+# mocap_pose_estimate
+/**/mocap:
+  ros__parameters:
+    # select mocap source
+    use_tf: false   # ~mocap/tf
+    use_pose: true  # ~mocap/pose
+
+# odom
+/**/odometry:
+  ros__parameters:
+    fcu.odom_parent_id_des: "map"   # desired parent frame rotation of the FCU's odometry
+    fcu.odom_child_id_des: "map"    # desired child frame rotation of the FCU's odometry
+
+# vision_pose_estimate
+/**/vision_pose:
+  ros__parameters:
+    tf.listen: false           # enable tf listener (disable topic subscribers)
+    tf.frame_id: "map"
+    tf.child_frame_id: "vision_estimate"
+    tf.rate_limit: 10.0
+
+# vision_speed_estimate
+/**/vision_speed:
+  ros__parameters:
+    listen_twist: true    # enable listen to twist topic, else listen to vec3d topic
+    twist_cov: true       # enable listen to twist with covariance topic
