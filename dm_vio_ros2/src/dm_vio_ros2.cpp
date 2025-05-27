@@ -353,7 +353,9 @@ namespace dmvio
                     const auto diffTransform = lastImuToWorld.inverse() * imuToWorld;
                     const auto diffTimestamp = frame->timestamp - lastTimestamp;
                     const auto linVel = diffTransform.translation() / diffTimestamp;
-                    const auto angVel = diffTransform.so3().log() / diffTimestamp;
+                    // compute in to steps to trick eigen to evaluate
+                    const auto angDelta = diffTransform.so3().log();
+                    const auto angVel = angDelta / diffTimestamp;
 
                     odomMsg->twist.twist.linear.x = linVel.x();
                     odomMsg->twist.twist.linear.y = linVel.y();
