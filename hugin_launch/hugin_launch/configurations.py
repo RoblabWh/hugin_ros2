@@ -42,6 +42,12 @@ frame_base = DeclareLaunchArgument(
 frame_imu = DeclareLaunchArgument(
     "frame_imu", default_value="imu", description="frame_id of IMU"
 )
+frame_fcu = DeclareLaunchArgument(
+    "frame_fcu", default_value="fcu", description="frame_id of FCU"
+)
+frame_gps = DeclareLaunchArgument(
+    "frame_gps", default_value="gps", description="frame_id of GPS"
+)
 
 
 ##############
@@ -54,13 +60,13 @@ tf_base_imu = Node(
     executable="static_transform_publisher",
     name="tf_base_imu",
     arguments=[
-        # TODO adjust translation
+        #NOTE translation from f3d
         "--x",
-        "0.021",
+        "0.02796",
         "--y",
-        "-0.021",
+        "-0.009015",
         "--z",
-        "0.038",
+        "0.038742",
         "--roll",
         str(radians(180)),
         "--yaw",
@@ -73,6 +79,45 @@ tf_base_imu = Node(
     output="screen",
 )
 
+tf_base_fcu = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    name="tf_base_fcu",
+    arguments=[
+        #NOTE translation from f3d
+        #NOTE tf to center of fcu (never needed)
+        # "--z",
+        # "0.0025",
+        #NOTE tf to first IMU on fcu (only needed tf so publish this)
+        "--x",
+        "-0.003913",
+        "--y",
+        "0.011861",
+        "--z",
+        "-0.0033",
+        "--frame-id",
+        LaunchConfiguration("frame_base"),
+        "--child-frame-id",
+        LaunchConfiguration("frame_fcu"),
+    ],
+    output="screen",
+)
+
+tf_base_gps = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    name="tf_base_gps",
+    arguments=[
+        #NOTE translation from f3d
+        "--z",
+        "0.1",
+        "--frame-id",
+        LaunchConfiguration("frame_base"),
+        "--child-frame-id",
+        LaunchConfiguration("frame_gps"),
+    ],
+    output="screen",
+)
 
 ######################
 ### Configurations ###
