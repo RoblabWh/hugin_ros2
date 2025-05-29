@@ -79,28 +79,28 @@ namespace dmvio
         void callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg);
         void callbackResetOdometry(const std_msgs::msg::Header::ConstSharedPtr &msg);
 
-        message_filters::Subscriber<sensor_msgs::msg::Image> subscriptionImage;
-        message_filters::Subscriber<image_info_msgs::msg::ImageInfo> subscriptionImageInfo;
-        message_filters::TimeSynchronizer<sensor_msgs::msg::Image, image_info_msgs::msg::ImageInfo> syncImage;
-        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr subscriptionIMU;
+        message_filters::Subscriber<sensor_msgs::msg::Image> sub_image;
+        message_filters::Subscriber<image_info_msgs::msg::ImageInfo> sub_image_info;
+        message_filters::TimeSynchronizer<sensor_msgs::msg::Image, image_info_msgs::msg::ImageInfo> sync_image;
+        rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
 
-        rclcpp::Publisher<dm_vio_msgs::msg::DMVIOState>::SharedPtr systemStatePublisher;
-        rclcpp::Publisher<dm_vio_msgs::msg::DMVIOPose>::SharedPtr dmvioPosePublisher;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr unscaledPosePublisher;
-        rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr metricPosePublisher;
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr liveImagePublisher, liveDepthPublisher, liveDepthFloatPublisher;
+        rclcpp::Publisher<dm_vio_msgs::msg::DMVIOState>::SharedPtr pub_system_state;
+        rclcpp::Publisher<dm_vio_msgs::msg::DMVIOPose>::SharedPtr pub_pose_dmvio;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_dso;
+        rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odometry;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_image_live, pub_depth_image, pub_depth_float;
 
-        rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr resetOriginPublisher;
-        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr resetOriginSubscriber;
+        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_reset_origin;
+        rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr pub_reset_origin;
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfbc_origin_odom;
 
-        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr resetOdometrySubscriber;
+        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_reset_odometry;
 
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info;
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera, tfbc_odom_base;
-        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr cameraInfoPublisher;
-        std::unique_ptr<tf2_ros::Buffer> tfBuffer;
-        std::unique_ptr<tf2_ros::TransformListener> tfListener;
+        std::unique_ptr<tf2_ros::Buffer> tf_buffer;
+        std::unique_ptr<tf2_ros::TransformListener> tf_listener;
 
         std::string frame_origin, frame_odom, frame_base, frame_imu, frame_camera;
         bool publish_tf, update_origin, reset_origin = false;

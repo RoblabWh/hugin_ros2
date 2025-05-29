@@ -79,11 +79,11 @@ namespace dmvio
 
     void ROS2Wrapper::reset_system()
     {
-        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings, &dsoSettings);
+        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings, &(this->dsoSettings));
 
         if (this->dsoSettings.photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
         {
-            RCLCPP_ERROR(this->get_logger(), "Photometric calibration not available! Need to use mode=1 or mode=2");
+            RCLCPP_ERROR(get_logger(), "Photometric calibration not available! Need to use mode=1 or mode=2");
             throw std::invalid_argument("Photometric calibration not available!");
         }
 
@@ -99,7 +99,7 @@ namespace dmvio
     }
 
     ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
-        : Node("dm_vio", options), syncImage(this->subscriptionImage, this->subscriptionImageInfo, rclcpp::SensorDataQoS().depth()), imuInt(frameContainer, nullptr), mainSettings(&dsoSettings)
+        : Node("dm_vio", options), sync_image(this->sub_image, this->sub_image_info, rclcpp::SensorDataQoS().depth()), imuInt(this->frameContainer, nullptr), mainSettings(&(this->dsoSettings))
     {
         // declare params
         this->declare_parameter("calibration", "");
@@ -134,7 +134,7 @@ namespace dmvio
         bool quiet = this->get_parameter("quiet").as_bool();
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
-        imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
+        this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualInertial = this->get_parameter("max_skip_visual_inertial").as_int();
@@ -152,8 +152,8 @@ namespace dmvio
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
 
-        std::filesystem::create_directory(imuSettings.resultsPrefix);
-        if (!std::filesystem::exists(imuSettings.resultsPrefix))
+        std::filesystem::create_directory(this->imuSettings.resultsPrefix);
+        if (!std::filesystem::exists(this->imuSettings.resultsPrefix))
             throw std::invalid_argument("Results path not found!");
 
         std::ifstream calib_file(calib_path);
@@ -164,37 +164,33 @@ namespace dmvio
         basalt::Calibration<double> calib;
         cereal::JSONInputArchive archive(calib_file);
         archive(calib);
-        camTimeOffset = calib.cam_time_offset_ns * 1e-9;
+        this->camTimeOffset = calib.cam_time_offset_ns * 1e-9;
 
         switch (mode)
         {
         case 0:
-            RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITH CALIBRATION!");
+            RCLCPP_INFO(get_logger(), "Mode: Photometric correction with calibration");
             break;
         case 1:
-            RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITHOUT CALIBRATION!");
+            RCLCPP_INFO(get_logger(), "Mode: Photometric correction without calibration");
             this->dsoSettings.photometricCalibration = 0;
             this->dsoSettings.affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             this->dsoSettings.affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             break;
         case 2:
-            RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITH PERFECT IMAGES!");
+            RCLCPP_INFO(get_logger(), "Mode: Perfect images (no photometric correction)");
             this->dsoSettings.photometricCalibration = 0;
             this->dsoSettings.affineOptModeA = -1; //-1: fix. >=0: optimize (with prior, if > 0).
             this->dsoSettings.affineOptModeB = -1; //-1: fix. >=0: optimize (with prior, if > 0).
             this->dsoSettings.minGradHistAdd = 3;
             break;
         case 3:
-            // This mode is useful because mode 0 assumes that exposure is available (as it adds a strong prior to
-            // the affine brightness change between images), and mode 1 does not use vignette at all.
-            // This mode uses vignette (and response), but still fully optimizes brightness changes, hence it is
-            // appropriate for sensors without exposure time but with a calibrated vignette.
-            RCLCPP_INFO(get_logger(), "PHOTOMETRIC MODE WITH CALIBRATION, BUT NO OR INACCURATE EXPOSURE!");
+            RCLCPP_INFO(get_logger(), "Mode: Photometric correction with calibration, but no or incorrect exposure times");
             this->dsoSettings.affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             this->dsoSettings.affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
             break;
         default:
-            throw std::invalid_argument("PHOTOMETRIC MODE UNKNOWN!");
+            throw std::invalid_argument("Photometric correction mode unknown");
         }
 
         this->mainSettings.settingsDefault(preset);
@@ -202,21 +198,21 @@ namespace dmvio
         if (quiet)
         {
             this->dsoSettings.debugout_runquiet = true;
-            RCLCPP_INFO(get_logger(), "QUIET MODE, I'll shut up!");
+            RCLCPP_INFO(get_logger(), "Enabled: Quiet Mode");
         }
         if (nolog)
         {
             this->dsoSettings.logStuff = false;
-            RCLCPP_INFO(get_logger(), "DISABLE LOGGING!");
+            RCLCPP_INFO(get_logger(), "Disabled: Internal Logging");
         }
         if (use_imu)
         {
-            RCLCPP_INFO(get_logger(), "Enabling IMU integration!");
+            RCLCPP_INFO(get_logger(), "Enabled: IMU integration");
             this->dsoSettings.useIMU = true;
         }
         else
         {
-            RCLCPP_INFO(get_logger(), "Disabling IMU integration!");
+            RCLCPP_INFO(get_logger(), "Disabled: IMU integration");
             this->dsoSettings.useIMU = false;
         }
 
@@ -238,64 +234,59 @@ namespace dmvio
         auto sub_options_image = rclcpp::SubscriptionOptions();
         sub_options_image.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-        this->subscriptionImage.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-        this->subscriptionImageInfo.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-        this->syncImage.registerCallback(std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1, std::placeholders::_2));
-        this->subscriptionIMU = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1), sub_options_imu);
+        this->sub_image.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+        this->sub_image_info.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+        this->sync_image.registerCallback(std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1, std::placeholders::_2));
+        this->sub_imu = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1), sub_options_imu);
 
-        this->systemStatePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
-        this->dmvioPosePublisher = this->create_publisher<dm_vio_msgs::msg::DMVIOPose>("pose_dmvio", rclcpp::SensorDataQoS());
-        this->unscaledPosePublisher = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_raw", rclcpp::SensorDataQoS());
-        // While we publish the metric pose for convenience we don't recommend using it.
-        // The reason is that the scale used for generating it might change over time.
-        // Usually it is better to save the trajectory and multiply all of it with the newest scale.
-        this->metricPosePublisher = this->create_publisher<nav_msgs::msg::Odometry>("pose_metric", rclcpp::SensorDataQoS());
+        this->pub_system_state = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
+        this->pub_pose_dmvio = this->create_publisher<dm_vio_msgs::msg::DMVIOPose>("pose_dmvio", rclcpp::SensorDataQoS());
+        this->pub_pose_dso = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_dso", rclcpp::SensorDataQoS());
+        this->pub_odometry = this->create_publisher<nav_msgs::msg::Odometry>("odometry", rclcpp::SensorDataQoS());
 
-        this->liveImagePublisher = this->create_publisher<sensor_msgs::msg::Image>("image_live", rclcpp::SensorDataQoS());
-        this->liveDepthPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
-        this->liveDepthFloatPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
+        this->pub_image_live = this->create_publisher<sensor_msgs::msg::Image>("image_live", rclcpp::SensorDataQoS());
+        this->pub_depth_image = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
+        this->pub_depth_float = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
 
-        this->resetOdometrySubscriber = this->create_subscription<std_msgs::msg::Header>("reset_odometry", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOdometry, this, std::placeholders::_1));
+        this->sub_reset_odometry = this->create_subscription<std_msgs::msg::Header>("reset_odometry", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOdometry, this, std::placeholders::_1));
 
         if (this->update_origin)
-            this->resetOriginPublisher = this->create_publisher<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS());
-        this->resetOriginSubscriber = this->create_subscription<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOrigin, this, std::placeholders::_1));
+            this->pub_reset_origin = this->create_publisher<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS());
+        this->sub_reset_origin = this->create_subscription<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOrigin, this, std::placeholders::_1));
         this->tfbc_origin_odom = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
 
+        this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
+        this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+
+        this->tfbc_odom_base = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+
+        this->tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        this->tf_listener = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer, this, false);
+
+        // publish static data
         geometry_msgs::msg::TransformStamped tf_origin_odom;
         tf_origin_odom.header.stamp = setup_time;
-        tf_origin_odom.header.frame_id = frame_origin;
-        tf_origin_odom.child_frame_id = frame_odom;
+        tf_origin_odom.header.frame_id = this->frame_origin;
+        tf_origin_odom.child_frame_id = this->frame_odom;
         tf2::toMsg(tf2::Transform::getIdentity(), tf_origin_odom.transform);
         tfbc_origin_odom->sendTransform(tf_origin_odom);
 
-        if (publish_tf)
-        {
-            this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
-            this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+        geometry_msgs::msg::TransformStamped tf_imu_camera;
+        tf_imu_camera.header.stamp = setup_time;
+        tf_imu_camera.header.frame_id = this->frame_imu;
+        tf_imu_camera.child_frame_id = this->frame_camera;
+        setTransformFromSE3(calib.T_i_c[this->dsoSettings.multiCameraIndex], tf_imu_camera.transform);
+        tfbc_imu_camera->sendTransform(tf_imu_camera);
 
-            geometry_msgs::msg::TransformStamped tf_imu_camera;
-            tf_imu_camera.header.stamp = setup_time;
-            tf_imu_camera.header.frame_id = frame_imu;
-            tf_imu_camera.child_frame_id = frame_camera;
+        tf_imu_camera.child_frame_id += "_calibration";
+        tfsbc_imu_camera->sendTransform(tf_imu_camera);
 
-            setTransformFromSE3(calib.T_i_c[this->dsoSettings.multiCameraIndex], tf_imu_camera.transform);
-            tfbc_imu_camera->sendTransform(tf_imu_camera);
-
-            tf_imu_camera.child_frame_id += "_calibration";
-            tfsbc_imu_camera->sendTransform(tf_imu_camera);
-
-            this->tfbc_odom_base = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-        }
-        this->tfBuffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
-        this->tfListener = std::make_unique<tf2_ros::TransformListener>(*this->tfBuffer, this, false);
-
-        auto static_pub_options = rclcpp::PublisherOptions();
+        rclcpp::PublisherOptions static_pub_options;
         static_pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-        this->cameraInfoPublisher = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", rclcpp::QoS(1).reliable().transient_local(), static_pub_options);
+        this->pub_camera_info = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", rclcpp::QoS(1).reliable().transient_local(), static_pub_options);
         auto camera_info = std::make_unique<sensor_msgs::msg::CameraInfo>();
         camera_info->header.stamp = setup_time;
-        camera_info->header.frame_id = frame_camera;
+        camera_info->header.frame_id = this->frame_camera;
         camera_info->width = this->dsoSettings.calibG.wG[0];
         camera_info->height = this->dsoSettings.calibG.hG[0];
         camera_info->k[0] = this->dsoSettings.calibG.KG[0](0, 0);
@@ -303,7 +294,7 @@ namespace dmvio
         camera_info->k[4] = this->dsoSettings.calibG.KG[0](1, 1);
         camera_info->k[5] = this->dsoSettings.calibG.KG[0](1, 2);
         camera_info->k[8] = 1.0;
-        this->cameraInfoPublisher->publish(std::move(camera_info));
+        this->pub_camera_info->publish(std::move(camera_info));
 
         // setup vio
         this->frameSkipping = std::make_unique<dmvio::FrameSkippingStrategy>(this->frameSkippingSettings);
@@ -313,40 +304,34 @@ namespace dmvio
 
     ROS2Wrapper::~ROS2Wrapper()
     {
-        RCLCPP_INFO(this->get_logger(), "Shutting down");
-        stopSystem = true;
-        frameContainer.stop();
-        worker.join();
+        RCLCPP_INFO(get_logger(), "Shutting down");
+        this->stopSystem = true;
+        this->frameContainer.stop();
+        this->worker.join();
     }
 
     void ROS2Wrapper::publishTransformDSOToIMU(const TransformDSOToIMU &transformDSOToIMUPassed)
     {
         std::unique_lock<std::mutex> lk(mutex);
-        transformDSOToIMU = std::make_unique<dmvio::TransformDSOToIMU>(transformDSOToIMUPassed,
-                                                                       std::make_shared<bool>(false),
-                                                                       std::make_shared<bool>(false),
-                                                                       std::make_shared<bool>(false));
-        scaleAvailable = lastSystemStatus == SystemStatus::VISUAL_INERTIAL;
-        // You could also publish the new scale (and potentially gravity direction) here already if you want to use it as
-        // soon as possible. For this simple ROS wrapper I decided to publish it bundled with the newest tracked pose as
-        // this is when it is usually needed.
-
-        //TODO might want to use this
+        this->transformDSOToIMU = std::make_unique<dmvio::TransformDSOToIMU>(transformDSOToIMUPassed,
+                                                                             std::make_shared<bool>(false),
+                                                                             std::make_shared<bool>(false),
+                                                                             std::make_shared<bool>(false));
+        this->scaleAvailable = lastSystemStatus == SystemStatus::VISUAL_INERTIAL;
     }
 
     void ROS2Wrapper::publishSystemStatus(dmvio::SystemStatus systemStatus)
     {
-        dm_vio_msgs::msg::DMVIOState msg;
-        msg.header.stamp = get_clock()->now();
-        msg.header.frame_id = frame_camera;
-        msg.state = static_cast<int>(systemStatus);
-        systemStatePublisher->publish(msg);
-        lastSystemStatus = systemStatus;
+        auto msg = std::make_unique<dm_vio_msgs::msg::DMVIOState>();
+        msg->header.stamp = this->get_clock()->now();
+        msg->header.frame_id = this->frame_camera;
+        msg->state = static_cast<int>(systemStatus);
+
         if (systemStatus == dmvio::SystemStatus::VISUAL_INERTIAL)
         {
             RCLCPP_INFO(get_logger(), "System status: VISUAL_INERTIAL");
             if (this->update_origin)
-                this->resetOriginPublisher->publish(msg.header);
+                this->pub_reset_origin->publish(msg->header);
         }
         else if (systemStatus == dmvio::SystemStatus::VISUAL_ONLY)
         {
@@ -360,13 +345,15 @@ namespace dmvio
         {
             RCLCPP_ERROR(get_logger(), "System status: UNKNOWN");
         }
+        this->pub_system_state->publish(std::move(msg));
+        this->lastSystemStatus = systemStatus;
     }
 
     void ROS2Wrapper::publishCamPose(dso::FrameShell *frame, dso::CalibHessian *HCalib)
     {
         auto msg = std::make_unique<dm_vio_msgs::msg::DMVIOPose>();
         msg->header.stamp = stampFromDSO(frame->timestamp);
-        msg->header.frame_id = frame_odom;
+        msg->header.frame_id = this->frame_odom;
 
         const auto &camToWorld = frame->camToWorld;
         setPoseFromSE3(camToWorld, msg->pose);
@@ -375,52 +362,52 @@ namespace dmvio
         auto unscaledMsg = std::make_unique<geometry_msgs::msg::PoseStamped>();
         unscaledMsg->header = msg->header;
         unscaledMsg->pose = msg->pose;
-        unscaledPosePublisher->publish(std::move(unscaledMsg));
+        this->pub_pose_dso->publish(std::move(unscaledMsg));
 
         {
             std::unique_lock<std::mutex> lk(mutex);
-            if (transformDSOToIMU && scaleAvailable)
+            if (this->transformDSOToIMU && this->scaleAvailable)
             {
-                msg->scale = transformDSOToIMU->getScale();
+                msg->scale = this->transformDSOToIMU->getScale();
 
                 // Transform to metric imu to world. Note that we need to use the inverse as transformDSOToIMU expects
                 // worldToCam as an input!
-                const auto imuToWorld = Sophus::SE3d(transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
+                const auto imuToWorld = Sophus::SE3d(this->transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
 
                 // Get transfrom from imu to base frame, to publish odometry to base frame, when available.
-                bool tf2_imu_odom_available;
+                bool tf2_imu_base_available;
                 tf2::Transform tf2_imu_base;
                 try
                 {
-                    const auto tf_imu_base = this->tfBuffer->lookupTransform(frame_base, frame_imu, tf2::TimePointZero);
+                    const auto tf_imu_base = this->tf_buffer->lookupTransform(this->frame_base, this->frame_imu, tf2::TimePointZero);
                     tf2::fromMsg(tf_imu_base.transform, tf2_imu_base);
-                    tf2_imu_odom_available = true;
+                    tf2_imu_base_available = true;
                 }
                 catch (const tf2::TransformException &e)
                 {
                     RCLCPP_WARN_ONCE(get_logger(), "Transform exception: %s, Falling back to identity.", e.what());
                     tf2_imu_base.setIdentity();
-                    tf2_imu_odom_available = false;
+                    tf2_imu_base_available = false;
                 }
                 tf2::Transform tf2_imu_odom;
                 setTransform2FromSE3(imuToWorld.inverse(), tf2_imu_odom);
                 tf2::Transform tf2_odom_base = (tf2_imu_base * tf2_imu_odom).inverse();
 
-                if (lastTimestamp > 0)
+                if (this->lastTimestamp > 0)
                 {
                     // Publish odometry
                     auto odomMsg = std::make_unique<nav_msgs::msg::Odometry>();
                     odomMsg->header = msg->header;
-                    odomMsg->child_frame_id = frame_imu;
+                    odomMsg->child_frame_id = this->frame_imu;
 
                     tf2::toMsg(tf2_odom_base, odomMsg->pose.pose);
                     // TODO set covariance
 
                     // Compute velocity
-                    const auto lastImuToWorld = Sophus::SE3d(transformDSOToIMU->transformPose(lastCamToWorld.inverse().matrix()));
+                    const auto lastImuToWorld = Sophus::SE3d(this->transformDSOToIMU->transformPose(this->lastCamToWorld.inverse().matrix()));
 
                     const auto diffTransform = lastImuToWorld.inverse() * imuToWorld;
-                    const auto diffTimestamp = frame->timestamp - lastTimestamp;
+                    const auto diffTimestamp = frame->timestamp - this->lastTimestamp;
                     const auto linVel = diffTransform.translation() / diffTimestamp;
                     // compute in to steps to trick eigen to evaluate
                     const auto angDelta = diffTransform.so3().log();
@@ -434,59 +421,59 @@ namespace dmvio
                     odomMsg->twist.twist.angular.z = angVel.z();
                     // TODO set covariance
 
-                    metricPosePublisher->publish(std::move(odomMsg));
+                    this->pub_odometry->publish(std::move(odomMsg));
                 }
 
-                if (publish_tf)
+                if (this->publish_tf)
                 {
                     geometry_msgs::msg::TransformStamped tf_odom_base;
                     tf_odom_base.header = msg->header;
-                    tf_odom_base.child_frame_id = tf2_imu_odom_available ? frame_base : frame_imu;
+                    tf_odom_base.child_frame_id = tf2_imu_base_available ? frame_base : frame_imu;
                     tf2::toMsg(tf2_odom_base, tf_odom_base.transform);
                     this->tfbc_odom_base->sendTransform(tf_odom_base);
                 }
-                if (reset_origin)
+                if (this->reset_origin)
                 {
                     // Publish new origin
                     geometry_msgs::msg::TransformStamped tf_origin_odom;
                     tf_origin_odom.header.stamp = msg->header.stamp;
-                    tf_origin_odom.header.frame_id = frame_origin;
-                    tf_origin_odom.child_frame_id = frame_odom;
+                    tf_origin_odom.header.frame_id = this->frame_origin;
+                    tf_origin_odom.child_frame_id = this->frame_odom;
                     tf2::toMsg(tf2_odom_base.inverse(), tf_origin_odom.transform);
-                    tfbc_origin_odom->sendTransform(tf_origin_odom);
-                    reset_origin = false;
+                    this->tfbc_origin_odom->sendTransform(tf_origin_odom);
+                    this->reset_origin = false;
                 }
             }
             else
             {
                 msg->scale = std::numeric_limits<double>::quiet_NaN();
-                if (transformDSOToIMU)
-                    assert(transformDSOToIMU->getScale() == 1.0);
+                if (this->transformDSOToIMU)
+                    assert(this->transformDSOToIMU->getScale() == 1.0);
             }
 
-            if (transformDSOToIMU)
+            if (this->transformDSOToIMU)
             {
-                Sophus::SO3d gravityDirection = transformDSOToIMU->getR_dsoW_metricW();
+                Sophus::SO3d gravityDirection = this->transformDSOToIMU->getR_dsoW_metricW();
                 msg->rotation_metric_to_dso.x = gravityDirection.unit_quaternion().x();
                 msg->rotation_metric_to_dso.y = gravityDirection.unit_quaternion().y();
                 msg->rotation_metric_to_dso.z = gravityDirection.unit_quaternion().z();
                 msg->rotation_metric_to_dso.w = gravityDirection.unit_quaternion().w();
-                setPoseFromSE3(transformDSOToIMU->getT_cam_imu(), msg->imu_to_cam);
+                setPoseFromSE3(this->transformDSOToIMU->getT_cam_imu(), msg->imu_to_cam);
             }
         }
 
-        lastTimestamp = frame->timestamp;
-        lastCamToWorld = camToWorld;
-        dmvioPosePublisher->publish(std::move(msg));
+        this->lastTimestamp = frame->timestamp;
+        this->lastCamToWorld = camToWorld;
+        this->pub_pose_dmvio->publish(std::move(msg));
     }
 
     void ROS2Wrapper::pushLiveFrame(dso::FrameHessian *image)
     {
-        if (liveImagePublisher->get_subscription_count() > 0)
+        if (this->pub_image_live->get_subscription_count() > 0)
         {
             auto msg = std::make_unique<sensor_msgs::msg::Image>();
             msg->header.stamp = stampFromDSO(image->shell->timestamp);
-            msg->header.frame_id = frame_camera;
+            msg->header.frame_id = this->frame_camera;
             msg->height = this->dsoSettings.calibG.hG[0];
             msg->width = this->dsoSettings.calibG.wG[0];
             msg->encoding = "mono8";
@@ -499,17 +486,17 @@ namespace dmvio
                 msg->data[i] = image->dI[i][0] * 0.8 > 255.0f ? 255 : static_cast<uint8_t>(image->dI[i][0] * 0.8);
             }
 
-            liveImagePublisher->publish(std::move(msg));
+            this->pub_image_live->publish(std::move(msg));
         }
     }
 
     void ROS2Wrapper::pushDepthImage(dso::MinimalImageB3 *image, dso::FrameHessian *KF)
     {
-        if (liveDepthPublisher->get_subscription_count() > 0)
+        if (this->pub_depth_image->get_subscription_count() > 0)
         {
             auto msg = std::make_unique<sensor_msgs::msg::Image>();
             msg->header.stamp = stampFromDSO(KF->shell->timestamp);
-            msg->header.frame_id = frame_camera;
+            msg->header.frame_id = this->frame_camera;
             msg->height = image->h;
             msg->width = image->w;
             msg->encoding = "bgr8";
@@ -519,17 +506,17 @@ namespace dmvio
 
             std::memcpy(msg->data.data(), image->data, msg->data.size());
 
-            liveDepthPublisher->publish(std::move(msg));
+            this->pub_depth_image->publish(std::move(msg));
         }
     }
 
     void ROS2Wrapper::pushDepthImageFloat(dso::MinimalImageF *image, dso::FrameHessian *KF)
     {
-        if (liveDepthFloatPublisher->get_subscription_count() > 0)
+        if (this->pub_depth_float->get_subscription_count() > 0)
         {
             auto msg = std::make_unique<sensor_msgs::msg::Image>();
             msg->header.stamp = stampFromDSO(KF->shell->timestamp);
-            msg->header.frame_id = frame_camera;
+            msg->header.frame_id = this->frame_camera;
             msg->height = image->h;
             msg->width = image->w;
             msg->encoding = "32FC1";
@@ -539,21 +526,21 @@ namespace dmvio
 
             std::memcpy(msg->data.data(), image->data, msg->data.size());
 
-            liveDepthFloatPublisher->publish(std::move(msg));
+            this->pub_depth_float->publish(std::move(msg));
         }
     }
 
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
     {
-        double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + camTimeOffset;
+        const double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + this->camTimeOffset;
         const auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
         const auto minImg = dso::MinimalImageB((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
-        auto undistImg = std::unique_ptr<dso::ImageAndExposure>(undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
+        auto undistImg = std::unique_ptr<dso::ImageAndExposure>(this->undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
 
         RCLCPP_NDEBUG(get_logger(), "<callbackImage> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
-                     rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
+                      rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
 
-        imuInt.addImage(std::move(undistImg), timestamp);
+        this->imuInt.addImage(std::move(undistImg), timestamp);
     }
 
     void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg)
@@ -573,8 +560,8 @@ namespace dmvio
         gyrData.push_back(msg->angular_velocity.z);
 
         const double timestamp = rclcpp::Time(msg->header.stamp).seconds();
-        imuInt.addAccData(std::move(accData), timestamp);
-        imuInt.addGyrData(std::move(gyrData), timestamp);
+        this->imuInt.addAccData(std::move(accData), timestamp);
+        this->imuInt.addGyrData(std::move(gyrData), timestamp);
     }
 
     void ROS2Wrapper::callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg)
@@ -593,18 +580,18 @@ namespace dmvio
     {
         size_t image_id = 0;
 
-        while (!stopSystem)
+        while (!this->stopSystem)
         {
             // Skip the first few frames if the start variable is set.
-            if (start > 0 && image_id < start)
+            if (this->start > 0 && image_id < this->start)
             {
-                auto pair = frameContainer.getImageAndIMUData(0);
+                auto pair = this->frameContainer.getImageAndIMUData(0);
                 ++image_id;
                 continue;
             }
 
-            int numSkipFrames = frameSkipping->getMaxSkipFrames(frameContainer.getQueueSize());
-            auto pair = frameContainer.getImageAndIMUData(numSkipFrames);
+            const int numSkipFrames = this->frameSkipping->getMaxSkipFrames(this->frameContainer.getQueueSize());
+            auto pair = this->frameContainer.getImageAndIMUData(numSkipFrames);
 
             if (!pair.first)
                 continue;
@@ -612,9 +599,9 @@ namespace dmvio
             this->fullSystem->addActiveFrame(pair.first.get(), image_id, &(pair.second), nullptr);
 
             if (this->fullSystem->initFailed)
-                RCLCPP_INFO(this->get_logger(), "Init Failed!");
+                RCLCPP_INFO(get_logger(), "Init Failed!");
             if (this->fullSystem->isLost)
-                RCLCPP_INFO(this->get_logger(), "Lost!");
+                RCLCPP_INFO(get_logger(), "Lost!");
 
             if (this->fullSystem->initFailed || this->fullSystem->isLost || this->dsoSettings.fullResetRequested)
             {
@@ -626,19 +613,19 @@ namespace dmvio
             ++image_id;
         }
 
-        fullSystem->blockUntilMappingIsFinished();
+        this->fullSystem->blockUntilMappingIsFinished();
 
-        fullSystem->printResult(imuSettings.resultsPrefix + "result.txt", false, false, true);
-        fullSystem->printResult(imuSettings.resultsPrefix + "resultScaled.txt", false, true, true);
+        this->fullSystem->printResult(this->imuSettings.resultsPrefix + "result.txt", false, false, true);
+        this->fullSystem->printResult(this->imuSettings.resultsPrefix + "resultScaled.txt", false, true, true);
 
-        dmvio::TimeMeasurement::saveResults(imuSettings.resultsPrefix + "timings.txt");
+        dmvio::TimeMeasurement::saveResults(this->imuSettings.resultsPrefix + "timings.txt");
 
-        for (dso::IOWrap::Output3DWrapper *ow : fullSystem->outputWrapper)
+        for (dso::IOWrap::Output3DWrapper *ow : this->fullSystem->outputWrapper)
         {
             ow->join();
         }
 
-        fullSystem.reset();
+        this->fullSystem.reset();
     }
 
 }
