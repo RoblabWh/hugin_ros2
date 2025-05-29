@@ -92,6 +92,8 @@ namespace dmvio
             this->fullSystem->setGammaFunction(this->undistorter->photometricUndist->getG());
         }
 
+        this->frameSkipping->reset();
+
         this->fullSystem->outputWrapper.push_back(this->frameSkipping.get());
         this->fullSystem->outputWrapper.push_back(this);
     }
@@ -102,12 +104,19 @@ namespace dmvio
         // declare params
         this->declare_parameter("calibration", "");
         this->declare_parameter("camera_index", 0);
+
         this->declare_parameter("mode", 0);
         this->declare_parameter("preset", 0);
         this->declare_parameter("use_imu", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
+        this->declare_parameter("max_skip_visual_init", 0);
+        this->declare_parameter("max_skip_visual_only", 1);
+        this->declare_parameter("max_skip_visual_inertial", 2);
+        this->declare_parameter("max_skip_full_reset", -1);
+        this->declare_parameter("skip_delay_visual_only", 20);
+
         this->declare_parameter("frame_origin", "origin");
         this->declare_parameter("frame_odom", "odom");
         this->declare_parameter("frame_base", "base");
@@ -119,16 +128,23 @@ namespace dmvio
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
         this->dsoSettings.multiCameraIndex = this->get_parameter("camera_index").as_int();
+
         int mode = this->get_parameter("mode").as_int();
         int preset = this->get_parameter("preset").as_int();
         bool quiet = this->get_parameter("quiet").as_bool();
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
         imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
+        this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
+        this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
+        this->frameSkippingSettings.maxSkipFramesVisualInertial = this->get_parameter("max_skip_visual_inertial").as_int();
+        this->frameSkippingSettings.maxSkipFramesFullReset = this->get_parameter("max_skip_full_reset").as_int();
+        this->frameSkippingSettings.skipFramesVisualOnlyDelay = this->get_parameter("skip_delay_visual_only").as_int();
+
         this->frame_origin = this->get_parameter("frame_origin").as_string();
         this->frame_odom = this->get_parameter("frame_odom").as_string();
-        this->frame_imu = this->get_parameter("frame_imu").as_string();
         this->frame_base = this->get_parameter("frame_base").as_string();
+        this->frame_imu = this->get_parameter("frame_imu").as_string();
         this->frame_camera = this->get_parameter("frame_camera").as_string();
         this->publish_tf = this->get_parameter("publish_tf").as_bool();
         this->update_origin = this->get_parameter("update_origin").as_bool();
