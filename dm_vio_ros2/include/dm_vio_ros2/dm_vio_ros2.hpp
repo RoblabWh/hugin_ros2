@@ -76,6 +76,7 @@ namespace dmvio
 
         void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
         void callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg);
+        void callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg);
 
         message_filters::Subscriber<sensor_msgs::msg::Image> subscriptionImage;
         message_filters::Subscriber<image_info_msgs::msg::ImageInfo> subscriptionImageInfo;
@@ -88,14 +89,18 @@ namespace dmvio
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr metricPosePublisher;
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr liveImagePublisher, liveDepthPublisher, liveDepthFloatPublisher;
 
+        rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr resetOriginPublisher;
+        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr resetOriginSubscriber;
+        std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfbc_origin_odom;
+
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera, tfbc_odom_base;
         rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr cameraInfoPublisher;
         std::unique_ptr<tf2_ros::Buffer> tfBuffer;
         std::unique_ptr<tf2_ros::TransformListener> tfListener;
 
-        std::string frame_odom, frame_base, frame_imu, frame_camera;
-        bool publishTf;
+        std::string frame_origin, frame_odom, frame_base, frame_imu, frame_camera;
+        bool publish_tf, update_origin, reset_origin = false;
 
         // Protects transformDSOToIMU.
         std::mutex mutex;

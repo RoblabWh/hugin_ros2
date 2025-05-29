@@ -108,11 +108,13 @@ namespace dmvio
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
+        this->declare_parameter("frame_origin", "origin");
         this->declare_parameter("frame_odom", "odom");
         this->declare_parameter("frame_base", "base");
         this->declare_parameter("frame_imu", "imu");
         this->declare_parameter("frame_camera", "camera");
         this->declare_parameter("publish_tf", true);
+        this->declare_parameter("update_origin", false);
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
@@ -123,11 +125,13 @@ namespace dmvio
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
         imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
+        this->frame_origin = this->get_parameter("frame_origin").as_string();
         this->frame_odom = this->get_parameter("frame_odom").as_string();
         this->frame_imu = this->get_parameter("frame_imu").as_string();
         this->frame_base = this->get_parameter("frame_base").as_string();
         this->frame_camera = this->get_parameter("frame_camera").as_string();
-        this->publishTf = this->get_parameter("publish_tf").as_bool();
+        this->publish_tf = this->get_parameter("publish_tf").as_bool();
+        this->update_origin = this->get_parameter("update_origin").as_bool();
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
@@ -235,12 +239,24 @@ namespace dmvio
         this->liveDepthPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
         this->liveDepthFloatPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
 
-        if (publishTf)
+        if (this->update_origin)
+            this->resetOriginPublisher = this->create_publisher<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS());
+        this->resetOriginSubscriber = this->create_subscription<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOrigin, this, std::placeholders::_1));
+        this->tfbc_origin_odom = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
+
+        geometry_msgs::msg::TransformStamped tf_origin_odom;
+        tf_origin_odom.header.stamp = setup_time;
+        tf_origin_odom.header.frame_id = frame_origin;
+        tf_origin_odom.child_frame_id = frame_odom;
+        tf2::toMsg(tf2::Transform::getIdentity(), tf_origin_odom.transform);
+        tfbc_origin_odom->sendTransform(tf_origin_odom);
+
+        if (publish_tf)
         {
             this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
             this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
-            auto tf_imu_camera = geometry_msgs::msg::TransformStamped();
+            geometry_msgs::msg::TransformStamped tf_imu_camera;
             tf_imu_camera.header.stamp = setup_time;
             tf_imu_camera.header.frame_id = frame_imu;
             tf_imu_camera.child_frame_id = frame_camera;
@@ -311,6 +327,8 @@ namespace dmvio
         if (systemStatus == dmvio::SystemStatus::VISUAL_INERTIAL)
         {
             RCLCPP_INFO(get_logger(), "System status: VISUAL_INERTIAL");
+            if (this->update_origin)
+                this->resetOriginPublisher->publish(msg.header);
         }
         else if (systemStatus == dmvio::SystemStatus::VISUAL_ONLY)
         {
@@ -401,13 +419,24 @@ namespace dmvio
                     metricPosePublisher->publish(std::move(odomMsg));
                 }
 
-                if (publishTf)
+                if (publish_tf)
                 {
                     geometry_msgs::msg::TransformStamped tf_odom_base;
                     tf_odom_base.header = msg->header;
                     tf_odom_base.child_frame_id = tf2_imu_odom_available ? frame_base : frame_imu;
                     tf2::toMsg(tf2_odom_base, tf_odom_base.transform);
                     this->tfbc_odom_base->sendTransform(tf_odom_base);
+                }
+                if (reset_origin)
+                {
+                    // Publish new origin
+                    geometry_msgs::msg::TransformStamped tf_origin_odom;
+                    tf_origin_odom.header.stamp = msg->header.stamp;
+                    tf_origin_odom.header.frame_id = frame_origin;
+                    tf_origin_odom.child_frame_id = frame_odom;
+                    tf2::toMsg(tf2_odom_base.inverse(), tf_origin_odom.transform);
+                    tfbc_origin_odom->sendTransform(tf_origin_odom);
+                    reset_origin = false;
                 }
             }
             else
@@ -530,6 +559,12 @@ namespace dmvio
         imuInt.addGyrData(std::move(gyrData), timestamp);
     }
 
+    void ROS2Wrapper::callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg)
+    {
+        this->reset_origin = true;
+        RCLCPP_INFO(get_logger(), "Received origin reset request from: %s", msg->frame_id.c_str());
+    }
+
     void ROS2Wrapper::run()
     {
         size_t image_id = 0;
@@ -553,9 +588,9 @@ namespace dmvio
             this->fullSystem->addActiveFrame(pair.first.get(), image_id, &(pair.second), nullptr);
 
             if (this->fullSystem->initFailed)
-                RCLCPP_DEBUG(this->get_logger(), "Init Failed!");
+                RCLCPP_INFO(this->get_logger(), "Init Failed!");
             if (this->fullSystem->isLost)
-                RCLCPP_DEBUG(this->get_logger(), "Lost!");
+                RCLCPP_INFO(this->get_logger(), "Lost!");
 
             if (this->fullSystem->initFailed || this->fullSystem->isLost || this->dsoSettings.fullResetRequested)
             {
