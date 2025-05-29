@@ -7,6 +7,12 @@ from .utils import radians
 # Common Arguments #
 ####################
 
+log_level = DeclareLaunchArgument(
+    "log_level",
+    default_value="info",
+    description="Log level",
+)
+
 ## Sensors
 cameras = DeclareLaunchArgument(
     "cameras",

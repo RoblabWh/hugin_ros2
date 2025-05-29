@@ -1,20 +1,24 @@
+from launch import LaunchDescriptionEntity
 from launch.substitutions import LaunchConfiguration
 from launch_ros.descriptions import ComposableNode
 from launch_ros.actions import ComposableNodeContainer, Node
 from .utils import boolean, integer_list
+from .configurations import log_level
 
 
-def compose(name: str, nodes: list[ComposableNode]) -> list[ComposableNodeContainer]:
+def compose(name: str, nodes: list[ComposableNode]) -> list[LaunchDescriptionEntity]:
     return [
+        log_level,
         ComposableNodeContainer(
             package="rclcpp_components",
             executable="component_container_mt",
             name=name,
             namespace="",
             composable_node_descriptions=nodes,
+            ros_arguments=["--log-level", LaunchConfiguration("log_level")],
             emulate_tty=True,
             output="screen",
-        )
+        ),
     ]
 
 
@@ -179,7 +183,7 @@ def dai_recorder(context) -> list[ComposableNode]:
 #################
 
 
-def kalman_filter(context) -> list[Node]:
+def kalman_filter(context) -> list[LaunchDescriptionEntity]:
     ekf_inputs = {}
     for i, cam_id in enumerate(
         integer_list(LaunchConfiguration("cameras").perform(context))
@@ -211,6 +215,7 @@ def kalman_filter(context) -> list[Node]:
             False,
         ]
     return [
+        log_level,
         Node(
             package="robot_localization",
             executable="ekf_node",
@@ -228,6 +233,7 @@ def kalman_filter(context) -> list[Node]:
             remappings=[
                 ("odometry/filtered", "odometry"),
             ],
+            ros_arguments=["--log-level", LaunchConfiguration("log_level")],
             output="screen",
-        )
+        ),
     ]
