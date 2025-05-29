@@ -70,13 +70,14 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
             ComposableNode(
                 package="dm_vio_ros2",
                 plugin="dmvio::ROS2Wrapper",
-                name=f"dmvio_cam{cam_id}",
+                name=f"dm_vio_cam{cam_id}",
                 parameters=[
                     {
                         "calibration": LaunchConfiguration("calibration").perform(
                             context
                         ),
                         "camera_index": cam_id,
+                        # DM-VIO
                         "mode": int(LaunchConfiguration("mode").perform(context)),
                         "preset": int(LaunchConfiguration("preset").perform(context)),
                         "use_imu": boolean(
@@ -84,7 +85,30 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         ),
                         "quiet": boolean(LaunchConfiguration("quiet").perform(context)),
                         "nolog": boolean(LaunchConfiguration("nolog").perform(context)),
-                        "frame_odom": f"odom{cam_id}",
+                        "max_skip_visual_init": int(
+                            LaunchConfiguration("max_skip_visual_init").perform(context)
+                        ),
+                        "max_skip_visual_only": int(
+                            LaunchConfiguration("max_skip_visual_only").perform(context)
+                        ),
+                        "max_skip_visual_inertial": int(
+                            LaunchConfiguration("max_skip_visual_inertial").perform(
+                                context
+                            )
+                        ),
+                        "max_skip_full_reset": int(
+                            LaunchConfiguration("max_skip_full_reset").perform(context)
+                        ),
+                        "skip_delay_visual_only": int(
+                            LaunchConfiguration("cam_hz").perform(context)
+                        ),
+                        # TF
+                        "frame_origin": LaunchConfiguration("frame_odom").perform(
+                            context
+                        ),
+                        "frame_odom": f"{
+                            LaunchConfiguration('frame_odom').perform(context)
+                        }{cam_id}",
                         "frame_base": LaunchConfiguration("frame_base").perform(
                             context
                         ),
@@ -93,14 +117,17 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "publish_tf": boolean(
                             LaunchConfiguration("publish_tf").perform(context)
                         ),
+                        "update_origin": boolean(
+                            LaunchConfiguration("update_origin").perform(context)
+                        ),
                     }
                 ],
                 remappings=[
                     ("imu", "imu/data_raw"),
                     ("image_raw", f"cam{cam_id}/image_raw"),
                     ("image_info", f"cam{cam_id}/image_info"),
-                    ("pose_raw", f"cam{cam_id}/pose_raw"),
-                    ("pose_metric", f"cam{cam_id}/pose_metric"),
+                    ("odometry", f"cam{cam_id}/odometry"),
+                    ("pose_dso", f"cam{cam_id}/pose_dso"),
                     ("pose_dmvio", f"cam{cam_id}/pose_dmvio"),
                     ("tracking_state", f"cam{cam_id}/tracking_state"),
                     ("image_live", f"cam{cam_id}/image_live"),
@@ -158,7 +185,7 @@ def kalman_filter(context) -> list[Node]:
         integer_list(LaunchConfiguration("cameras").perform(context))
     ):
         sensor_name = f"odom{i}"
-        sensor_topic = f"cam{cam_id}/pose_metric"
+        sensor_topic = f"cam{cam_id}/odometry"
         ekf_inputs[sensor_name] = sensor_topic
         ekf_inputs[f"{sensor_name}_config"] = [
             # Pos

@@ -99,6 +99,7 @@ bag_source = [
 
 dm_vio_nodes = [
     cameras,
+    cam_hz,
     calibration,
     DeclareLaunchArgument("mode", default_value="0", description="DM-VIO mode"),
     DeclareLaunchArgument(
@@ -114,10 +115,15 @@ dm_vio_nodes = [
     DeclareLaunchArgument(
         "nolog", default_value="true", description="DM-VIO disable logging"
     ),
-    publish_tf,
+    DeclareLaunchArgument("max_skip_visual_init", default_value="0", description="Maximum number of frames to skip during visual initialization"),
+    DeclareLaunchArgument("max_skip_visual_only", default_value="1", description="Maximum number of frames to skip during visual only mode"),
+    DeclareLaunchArgument("max_skip_visual_inertial", default_value="2", description="Maximum number of frames to skip during visual inertial mode"),
+    DeclareLaunchArgument("max_skip_full_reset", default_value="-1", description="Maximum number of frames to skip on full reset"),
     frame_odom,
     frame_base,
     frame_imu,
+    publish_tf,
+    DeclareLaunchArgument("update_origin", default_value="false", description="Trigger update of origin on initialization"),
     tf_base_imu,
 ]
 
