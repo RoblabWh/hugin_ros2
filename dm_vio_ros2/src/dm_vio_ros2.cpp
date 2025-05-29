@@ -239,6 +239,8 @@ namespace dmvio
         this->liveDepthPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
         this->liveDepthFloatPublisher = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
 
+        this->resetOdometrySubscriber = this->create_subscription<std_msgs::msg::Header>("reset_odometry", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOdometry, this, std::placeholders::_1));
+
         if (this->update_origin)
             this->resetOriginPublisher = this->create_publisher<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS());
         this->resetOriginSubscriber = this->create_subscription<std_msgs::msg::Header>("reset_origin", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOrigin, this, std::placeholders::_1));
@@ -563,6 +565,12 @@ namespace dmvio
     {
         this->reset_origin = true;
         RCLCPP_INFO(get_logger(), "Received origin reset request from: %s", msg->frame_id.c_str());
+    }
+
+    void ROS2Wrapper::callbackResetOdometry(const std_msgs::msg::Header::ConstSharedPtr &msg)
+    {
+        this->dsoSettings.fullResetRequested = true;
+        RCLCPP_INFO(get_logger(), "Received odmetry reset request from: %s", msg->frame_id.c_str());
     }
 
     void ROS2Wrapper::run()

@@ -77,6 +77,7 @@ namespace dmvio
         void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
         void callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg);
         void callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg);
+        void callbackResetOdometry(const std_msgs::msg::Header::ConstSharedPtr &msg);
 
         message_filters::Subscriber<sensor_msgs::msg::Image> subscriptionImage;
         message_filters::Subscriber<image_info_msgs::msg::ImageInfo> subscriptionImageInfo;
@@ -92,6 +93,8 @@ namespace dmvio
         rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr resetOriginPublisher;
         rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr resetOriginSubscriber;
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfbc_origin_odom;
+
+        rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr resetOdometrySubscriber;
 
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera, tfbc_odom_base;
