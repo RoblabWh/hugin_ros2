@@ -30,6 +30,12 @@
 #include "basalt/calibration/calibration.hpp"
 #include "basalt/serialization/headers_serialization.h"
 
+#ifndef NDEBUG
+#define RCLCPP_NDEBUG(logger, fmt, ...) RCLCPP_DEBUG(logger, fmt, __VA_ARGS__)
+#else
+#define RCLCPP_NDEBUG(logger, fmt, ...)
+#endif
+
 namespace dmvio
 {
     inline void setTransformFromSE3(const Sophus::SE3d &se3, geometry_msgs::msg::Transform &transform)
@@ -493,16 +499,20 @@ namespace dmvio
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
     {
         double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + camTimeOffset;
-        auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
+        const auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
+        const auto minImg = dso::MinimalImageB((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
+        auto undistImg = std::unique_ptr<dso::ImageAndExposure>(undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
 
-        dso::MinimalImageB minImg((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
-        std::unique_ptr<dso::ImageAndExposure> undistImg(undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
+        RCLCPP_NDEBUG(get_logger(), "<callbackImage> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
+                     rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
 
         imuInt.addImage(std::move(undistImg), timestamp);
     }
 
     void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg)
     {
+        RCLCPP_NDEBUG(get_logger(), "<callbackIMU> stamp=%f address=%p", rclcpp::Time(msg->header.stamp).seconds(), msg.get());
+
         std::vector<float> accData;
         accData.reserve(3);
         accData.push_back(msg->linear_acceleration.x);

@@ -1,5 +1,11 @@
 #include "dai_vi_ros2/dai_vi_ros2.hpp"
 
+#ifndef NDEBUG
+#define RCLCPP_NDEBUG(logger, fmt, ...) RCLCPP_DEBUG(logger, fmt, __VA_ARGS__)
+#else
+#define RCLCPP_NDEBUG(logger, fmt, ...)
+#endif
+
 namespace dai_vi
 {
 
@@ -100,6 +106,8 @@ namespace dai_vi
         auto pub = pub_cam_raw[name];
         if (pub->get_subscription_count() > 0)
         {
+          RCLCPP_NDEBUG(get_logger(), "<publish_images> stamp=%f dai=%p", rclcpp::Time(header.stamp).seconds(), img->getData().data());
+
           auto ros_msg = std::make_unique<sensor_msgs::msg::Image>();
           ros_msg->header = header;
           ros_msg->height = img->getHeight();
@@ -108,6 +116,8 @@ namespace dai_vi
           ros_msg->is_bigendian = false;
           ros_msg->step = img->getWidth();
           ros_msg->data = std::move(img->getData());
+
+          RCLCPP_NDEBUG(get_logger(), "<publish_images> stamp=%f msg=%p", rclcpp::Time(header.stamp).seconds(), ros_msg->data.data());
           pub->publish(std::move(ros_msg));
         }
       }
@@ -116,10 +126,14 @@ namespace dai_vi
         auto pub = pub_cam_comp[name];
         if (pub->get_subscription_count() > 0)
         {
+          RCLCPP_NDEBUG(get_logger(), "<publish_images> stamp=%f dai=%p", rclcpp::Time(header.stamp).seconds(), img->getData().data());
+
           auto ros_msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
           ros_msg->header = header;
           ros_msg->format = "jpeg";
           ros_msg->data = std::move(img->getData());
+
+          RCLCPP_NDEBUG(get_logger(), "<publish_images> stamp=%f msg=%p", rclcpp::Time(header.stamp).seconds(), ros_msg->data.data());
           pub->publish(std::move(ros_msg));
         }
       }
@@ -144,6 +158,7 @@ namespace dai_vi
     msg->angular_velocity.y = gyro.y;
     msg->angular_velocity.z = gyro.z;
 
+    RCLCPP_NDEBUG(get_logger(), "<publish_imu> stamp=%f address=%p", rclcpp::Time(msg->header.stamp).seconds(), static_cast<void *>(msg.get()));
     pub_imu->publish(std::move(msg));
   }
 
