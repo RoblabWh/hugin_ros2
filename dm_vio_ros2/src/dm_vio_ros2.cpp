@@ -45,6 +45,14 @@ namespace dmvio
         transform.rotation.w = rotation.w();
     }
 
+    inline void setTransform2FromSE3(const Sophus::SE3d &se3, tf2::Transform &transform)
+    {
+        const auto translation = se3.translation();
+        const auto rotation = se3.unit_quaternion();
+        transform.setOrigin(tf2::Vector3(translation.x(), translation.y(), translation.z()));
+        transform.setRotation(tf2::Quaternion(rotation.x(), rotation.y(), rotation.z(), rotation.w()));
+    }
+
     inline void setPoseFromSE3(const Sophus::SE3d &se3, geometry_msgs::msg::Pose &pose)
     {
         const auto translation = se3.translation();
@@ -238,9 +246,9 @@ namespace dmvio
             tfsbc_imu_camera->sendTransform(tf_imu_camera);
 
             this->tfbc_odom_base = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-            this->tfBuffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
-            this->tfListener = std::make_unique<tf2_ros::TransformListener>(*this->tfBuffer, this, false);
         }
+        this->tfBuffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        this->tfListener = std::make_unique<tf2_ros::TransformListener>(*this->tfBuffer, this, false);
 
         auto static_pub_options = rclcpp::PublisherOptions();
         static_pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
@@ -337,6 +345,25 @@ namespace dmvio
                 // worldToCam as an input!
                 const auto imuToWorld = Sophus::SE3d(transformDSOToIMU->transformPose(camToWorld.inverse().matrix()));
 
+                // Get transfrom from imu to base frame, to publish odometry to base frame, when available.
+                bool tf2_imu_odom_available;
+                tf2::Transform tf2_imu_base;
+                try
+                {
+                    const auto tf_imu_base = this->tfBuffer->lookupTransform(frame_base, frame_imu, tf2::TimePointZero);
+                    tf2::fromMsg(tf_imu_base.transform, tf2_imu_base);
+                    tf2_imu_odom_available = true;
+                }
+                catch (const tf2::TransformException &e)
+                {
+                    RCLCPP_WARN_ONCE(get_logger(), "Transform exception: %s, Falling back to identity.", e.what());
+                    tf2_imu_base.setIdentity();
+                    tf2_imu_odom_available = false;
+                }
+                tf2::Transform tf2_imu_odom;
+                setTransform2FromSE3(imuToWorld.inverse(), tf2_imu_odom);
+                tf2::Transform tf2_odom_base = (tf2_imu_base * tf2_imu_odom).inverse();
+
                 if (lastTimestamp > 0)
                 {
                     // Publish odometry
@@ -344,7 +371,7 @@ namespace dmvio
                     odomMsg->header = msg->header;
                     odomMsg->child_frame_id = frame_imu;
 
-                    setPoseFromSE3(imuToWorld, odomMsg->pose.pose);
+                    tf2::toMsg(tf2_odom_base, odomMsg->pose.pose);
                     // TODO set covariance
 
                     // Compute velocity
@@ -370,30 +397,11 @@ namespace dmvio
 
                 if (publishTf)
                 {
-                    try
-                    {
-                        const auto tf_imu_base = this->tfBuffer->lookupTransform(frame_base, frame_imu, tf2::TimePointZero);
-
-                        tf2::Transform tf2_imu_base, tf2_imu_odom, tf2_odom_base;
-
-                        tf2::fromMsg(tf_imu_base.transform, tf2_imu_base);
-
-                        geometry_msgs::msg::Transform tf_imu_odom;
-                        setTransformFromSE3(imuToWorld.inverse(), tf_imu_odom);
-                        tf2::fromMsg(tf_imu_odom, tf2_imu_odom);
-
-                        tf2_odom_base = (tf2_imu_base * tf2_imu_odom).inverse();
-
-                        geometry_msgs::msg::TransformStamped tf_odom_base;
-                        tf_odom_base.header = msg->header;
-                        tf_odom_base.child_frame_id = frame_base;
-                        tf2::toMsg(tf2_odom_base, tf_odom_base.transform);
-                        this->tfbc_odom_base->sendTransform(tf_odom_base);
-                    }
-                    catch (const tf2::TransformException &e)
-                    {
-                        RCLCPP_WARN_ONCE(get_logger(), "Transform exception: %s", e.what());
-                    }
+                    geometry_msgs::msg::TransformStamped tf_odom_base;
+                    tf_odom_base.header = msg->header;
+                    tf_odom_base.child_frame_id = tf2_imu_odom_available ? frame_base : frame_imu;
+                    tf2::toMsg(tf2_odom_base, tf_odom_base.transform);
+                    this->tfbc_odom_base->sendTransform(tf_odom_base);
                 }
             }
             else
