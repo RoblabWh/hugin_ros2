@@ -74,7 +74,8 @@ namespace dmvio
 
         void run();
 
-        void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
+        void callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img);
+        void callbackImageExposure(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info);
         void callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg);
         void callbackResetOrigin(const std_msgs::msg::Header::ConstSharedPtr &msg);
         void callbackResetOdometry(const std_msgs::msg::Header::ConstSharedPtr &msg);
@@ -82,6 +83,7 @@ namespace dmvio
         message_filters::Subscriber<sensor_msgs::msg::Image> sub_image;
         message_filters::Subscriber<image_info_msgs::msg::ImageInfo> sub_image_info;
         message_filters::TimeSynchronizer<sensor_msgs::msg::Image, image_info_msgs::msg::ImageInfo> sync_image;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_img;
         rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
 
         rclcpp::Publisher<dm_vio_msgs::msg::DMVIOState>::SharedPtr pub_system_state;

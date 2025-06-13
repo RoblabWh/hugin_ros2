@@ -108,6 +108,7 @@ namespace dmvio
         this->declare_parameter("mode", 0);
         this->declare_parameter("preset", 0);
         this->declare_parameter("use_imu", true);
+        this->declare_parameter("use_exposure", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
@@ -134,6 +135,7 @@ namespace dmvio
         bool quiet = this->get_parameter("quiet").as_bool();
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
+        bool use_exposure = this->get_parameter("use_exposure").as_bool();
         this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
@@ -215,6 +217,16 @@ namespace dmvio
             RCLCPP_INFO(get_logger(), "Disabled: IMU integration");
             this->dsoSettings.useIMU = false;
         }
+        if (use_exposure)
+        {
+            RCLCPP_INFO(get_logger(), "Enabled: Exposure integration");
+            this->dsoSettings.useExposure = true;
+        }
+        else
+        {
+            RCLCPP_INFO(get_logger(), "Disabled: Exposure integration");
+            this->dsoSettings.useExposure = false;
+        }
 
         this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(&dsoSettings, calib_path));
 
@@ -234,9 +246,16 @@ namespace dmvio
         auto sub_options_image = rclcpp::SubscriptionOptions();
         sub_options_image.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-        this->sub_image.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-        this->sub_image_info.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-        this->sync_image.registerCallback(std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1, std::placeholders::_2));
+        if (use_exposure)
+        {
+            this->sub_image.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+            this->sub_image_info.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
+            this->sync_image.registerCallback(std::bind(&ROS2Wrapper::callbackImageExposure, this, std::placeholders::_1, std::placeholders::_2));
+        }
+        else
+        {
+            this->sub_img = this->create_subscription<sensor_msgs::msg::Image>("image_raw", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1), sub_options_image);
+        }
         this->sub_imu = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1), sub_options_imu);
 
         this->pub_system_state = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
@@ -530,17 +549,25 @@ namespace dmvio
         }
     }
 
-    void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
+    void ROS2Wrapper::callbackImageExposure(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
     {
         const double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + this->camTimeOffset;
         const auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
         const auto minImg = dso::MinimalImageB((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
         auto undistImg = std::unique_ptr<dso::ImageAndExposure>(this->undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
 
-        RCLCPP_NDEBUG(get_logger(), "<callbackImage> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
+        RCLCPP_NDEBUG(get_logger(), "<callbackImageExposure> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
                       rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
 
         this->imuInt.addImage(std::move(undistImg), timestamp);
+    }
+
+    void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img)
+    {
+        static auto exposure = std::make_shared<image_info_msgs::msg::ImageInfo>();
+        exposure->header = msg_img->header;
+
+        this->callbackImageExposure(msg_img, exposure);
     }
 
     void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg)
