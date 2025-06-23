@@ -109,6 +109,7 @@ namespace dmvio
         this->declare_parameter("preset", 0);
         this->declare_parameter("use_imu", true);
         this->declare_parameter("use_exposure", true);
+        this->declare_parameter("use_image_info", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
@@ -136,6 +137,7 @@ namespace dmvio
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
         bool use_exposure = this->get_parameter("use_exposure").as_bool();
+        bool use_image_info = this->get_parameter("use_image_info").as_bool();
         this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
@@ -246,7 +248,7 @@ namespace dmvio
         auto sub_options_image = rclcpp::SubscriptionOptions();
         sub_options_image.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-        if (use_exposure)
+        if (use_exposure && use_image_info)
         {
             this->sub_image.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
             this->sub_image_info.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
@@ -566,6 +568,17 @@ namespace dmvio
     {
         static auto exposure = std::make_shared<image_info_msgs::msg::ImageInfo>();
         exposure->header = msg_img->header;
+        if (this->dsoSettings.useExposure)
+        {
+            try
+            {
+                exposure->exposure = rclcpp::Time(std::stol(msg_img->header.frame_id));
+            }
+            catch (const std::exception &e)
+            {
+                RCLCPP_WARN(get_logger(), "Failed to parse exposure time from frame_id: %s, error: %s", msg_img->header.frame_id.c_str(), e.what());
+            }
+        }
 
         this->callbackImageExposure(msg_img, exposure);
     }
