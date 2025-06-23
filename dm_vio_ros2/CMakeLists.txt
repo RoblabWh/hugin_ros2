@@ -13,6 +13,7 @@ find_package(message_filters REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(image_info_msgs REQUIRED)
 find_package(dm_vio_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
@@ -27,7 +28,7 @@ set(WITH_PANGOLIN OFF CACHE BOOL "Disable Pangolin" FORCE)
 add_subdirectory(thirdparty/dm-vio)
 
 # build component
-add_library(${PROJECT_NAME} SHARED src/dm_vio_ros2.cpp)
+add_library(${PROJECT_NAME} SHARED src/dm_vio_ros2.cpp src/keyframe_display.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
@@ -41,6 +42,7 @@ ament_target_dependencies(
   "sensor_msgs"
   "geometry_msgs"
   "nav_msgs"
+  "visualization_msgs"
   "image_info_msgs"
   "dm_vio_msgs"
   "cv_bridge"

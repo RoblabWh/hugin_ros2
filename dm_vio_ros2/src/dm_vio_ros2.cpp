@@ -22,6 +22,7 @@
 
 #include "filesystem"
 #include "dm_vio_ros2/dm_vio_ros2.hpp"
+#include "keyframe_display.hpp"
 #include "util/FrameShell.h"
 #include "util/TimeMeasurement.h"
 #include "GTSAMIntegration/PoseTransformationIMU.h"
@@ -273,6 +274,11 @@ namespace dmvio
         this->pub_depth_image = this->create_publisher<sensor_msgs::msg::Image>("image_depth", rclcpp::SensorDataQoS());
         this->pub_depth_float = this->create_publisher<sensor_msgs::msg::Image>("image_depth_float", rclcpp::SensorDataQoS());
 
+        this->pub_keyframes = this->create_publisher<visualization_msgs::msg::Marker>("keyframes", rclcpp::SystemDefaultsQoS());
+        this->pub_pointcloud = this->create_publisher<visualization_msgs::msg::Marker>("pointscloud", rclcpp::SystemDefaultsQoS());
+        this->pub_constraints = this->create_publisher<visualization_msgs::msg::Marker>("constraints", rclcpp::SystemDefaultsQoS());
+        this->pub_trajectory = this->create_publisher<visualization_msgs::msg::Marker>("trajectory", rclcpp::SystemDefaultsQoS());
+
         this->sub_reset_odometry = this->create_subscription<std_msgs::msg::Header>("reset_odometry", rclcpp::ServicesQoS(), std::bind(&ROS2Wrapper::callbackResetOdometry, this, std::placeholders::_1));
 
         if (this->update_origin)
@@ -287,6 +293,17 @@ namespace dmvio
 
         this->tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         this->tf_listener = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer, this, false);
+
+        trajectory.header.frame_id = this->frame_odom;
+        trajectory.ns = "frame";
+        trajectory.id = 0;
+        trajectory.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        trajectory.action = visualization_msgs::msg::Marker::MODIFY;
+        trajectory.color.r = 1.0;
+        trajectory.color.g = 0.0;
+        trajectory.color.b = 0.0;
+        trajectory.color.a = 1.0;
+        trajectory.scale.x = 0.03;
 
         // publish static data
         geometry_msgs::msg::TransformStamped tf_origin_odom;
@@ -322,6 +339,7 @@ namespace dmvio
         this->pub_camera_info->publish(std::move(camera_info));
 
         // setup vio
+        this->currentCam = std::make_unique<KeyFrameDisplay>(&(this->dsoSettings), "frame", this->frame_odom);
         this->frameSkipping = std::make_unique<dmvio::FrameSkippingStrategy>(this->frameSkippingSettings);
         this->reset_system();
         this->worker = std::thread(std::bind(&ROS2Wrapper::run, this));
@@ -487,6 +505,22 @@ namespace dmvio
             }
         }
 
+        // Publish visualization
+        if (this->pub_keyframes->get_subscription_count() > 0)
+        {
+            currentCam->setFromF(frame, HCalib);
+            auto cam = currentCam->drawCam(msg->header.stamp, nullptr, 0.01, 0.1, 0);
+            if (cam)
+                this->pub_keyframes->publish(std::move(cam));
+        }
+        auto &pos = trajectory.points.emplace_back();
+        pos.x = msg->pose.position.x;
+        pos.y = msg->pose.position.y;
+        pos.z = msg->pose.position.z;
+        trajectory.header.stamp = msg->header.stamp;
+        if (this->pub_trajectory->get_subscription_count() > 0)
+            this->pub_trajectory->publish(this->trajectory);
+
         this->lastTimestamp = frame->timestamp;
         this->lastCamToWorld = camToWorld;
         this->pub_pose_dmvio->publish(std::move(msg));
@@ -552,6 +586,181 @@ namespace dmvio
             std::memcpy(msg->data.data(), image->data, msg->data.size());
 
             this->pub_depth_float->publish(std::move(msg));
+        }
+    }
+
+    void ROS2Wrapper::publishKeyframes(std::vector<dso::FrameHessian *> &frames, bool final, dso::CalibHessian *HCalib)
+    {
+        static const float color[3] = {0.0f, 0.0f, 1.0f};
+        std::unique_lock<std::mutex> lk(mutex);
+        const auto stamp = this->get_clock()->now();
+        for (dso::FrameHessian *fh : frames)
+        {
+            if (keyframesByKFID.find(fh->frameID) == keyframesByKFID.end())
+            {
+                KeyFrameDisplay *kfd = new KeyFrameDisplay(&(this->dsoSettings), "keyframe", this->frame_odom);
+                keyframesByKFID[fh->frameID] = kfd;
+                keyframes.push_back(kfd);
+            }
+            auto &kfd = keyframesByKFID[fh->frameID];
+            kfd->setFromKF(fh, HCalib);
+            if (this->pub_keyframes->get_subscription_count() > 0)
+            {
+                auto cam = kfd->drawCam(stamp, color);
+                if (cam)
+                    this->pub_keyframes->publish(std::move(cam));
+            }
+            if (this->pub_pointcloud->get_subscription_count() > 0)
+            {
+                auto pointcloud = kfd->drawPointcloud(stamp);
+                if (pointcloud)
+                    this->pub_pointcloud->publish(std::move(pointcloud));
+            }
+        }
+        if (this->pub_trajectory->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<visualization_msgs::msg::Marker>();
+            msg->header.frame_id = this->frame_odom;
+            msg->header.stamp = stamp;
+            msg->ns = "keyframe";
+            msg->id = 0;
+            msg->type = visualization_msgs::msg::Marker::LINE_STRIP;
+            msg->action = visualization_msgs::msg::Marker::MODIFY;
+
+            msg->color.r = 0.0;
+            msg->color.g = 1.0;
+            msg->color.b = 0.0;
+            msg->color.a = 1.0;
+            msg->scale.x = 0.03;
+
+            for (unsigned int i = 0; i < keyframes.size(); i++)
+            {
+                const auto t = keyframes[i]->camToWorld.translation().cast<float>();
+                auto &p = msg->points.emplace_back();
+                p.x = t.x();
+                p.y = t.y();
+                p.z = t.z();
+            }
+            this->pub_trajectory->publish(std::move(msg));
+        }
+    }
+
+    void ROS2Wrapper::publishGraph(const std::map<uint64_t, Eigen::Vector2i, std::less<uint64_t>, Eigen::aligned_allocator<std::pair<const uint64_t, Eigen::Vector2i>>> &connectivity)
+    {
+        {
+            std::unique_lock<std::mutex> lk(mutex);
+            connections.resize(connectivity.size());
+            int runningID = 0;
+            int totalActFwd = 0, totalActBwd = 0, totalMargFwd = 0, totalMargBwd = 0;
+            for (std::pair<uint64_t, Eigen::Vector2i> p : connectivity)
+            {
+                int host = static_cast<int>(p.first >> 32);
+                int target = static_cast<int>(p.first & (uint64_t)0xFFFFFFFF);
+
+                assert(host >= 0 && target >= 0);
+                if (host == target)
+                {
+                    assert(p.second[0] == 0 && p.second[1] == 0);
+                    continue;
+                }
+
+                if (host > target)
+                    continue;
+
+                connections[runningID].from = keyframesByKFID.count(host) == 0 ? 0 : keyframesByKFID[host];
+                connections[runningID].to = keyframesByKFID.count(target) == 0 ? 0 : keyframesByKFID[target];
+                connections[runningID].fwdAct = p.second[0];
+                connections[runningID].fwdMarg = p.second[1];
+                totalActFwd += p.second[0];
+                totalMargFwd += p.second[1];
+
+                uint64_t inverseKey = (((uint64_t)target) << 32) + ((uint64_t)host);
+                Eigen::Vector2i st = connectivity.at(inverseKey);
+                connections[runningID].bwdAct = st[0];
+                connections[runningID].bwdMarg = st[1];
+
+                totalActBwd += st[0];
+                totalMargBwd += st[1];
+
+                runningID++;
+            }
+        }
+        const auto stamp = this->get_clock()->now();
+        if (this->pub_constraints->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<visualization_msgs::msg::Marker>();
+            msg->header.frame_id = this->frame_odom;
+            msg->header.stamp = stamp;
+            msg->ns = "all";
+            msg->id = 0;
+            msg->type = visualization_msgs::msg::Marker::LINE_LIST;
+            msg->action = visualization_msgs::msg::Marker::MODIFY;
+
+            msg->color.r = 0.0;
+            msg->color.g = 1.0;
+            msg->color.b = 0.0;
+            msg->color.a = 1.0;
+            msg->scale.x = 0.01;
+
+            for (unsigned int i = 0; i < connections.size(); i++)
+            {
+                if (connections[i].to == 0 || connections[i].from == 0)
+                    continue;
+                int nAct = connections[i].bwdAct + connections[i].fwdAct;
+                int nMarg = connections[i].bwdMarg + connections[i].fwdMarg;
+                if (nAct == 0 && nMarg > 0)
+                {
+                    const auto from = connections[i].from->camToWorld.translation().cast<float>();
+                    const auto to = connections[i].to->camToWorld.translation().cast<float>();
+                    auto &fp = msg->points.emplace_back();
+                    fp.x = from.x();
+                    fp.y = from.y();
+                    fp.z = from.z();
+                    auto &tp = msg->points.emplace_back();
+                    tp.x = to.x();
+                    tp.y = to.y();
+                    tp.z = to.z();
+                }
+            }
+            this->pub_constraints->publish(std::move(msg));
+        }
+        if (this->pub_constraints->get_subscription_count() > 0)
+        {
+            auto msg = std::make_unique<visualization_msgs::msg::Marker>();
+            msg->header.frame_id = this->frame_odom;
+            msg->header.stamp = stamp;
+            msg->ns = "active";
+            msg->id = 0;
+            msg->type = visualization_msgs::msg::Marker::LINE_LIST;
+            msg->action = visualization_msgs::msg::Marker::MODIFY;
+
+            msg->color.r = 0.0;
+            msg->color.g = 0.0;
+            msg->color.b = 1.0;
+            msg->color.a = 1.0;
+            msg->scale.x = 0.03;
+
+            for (unsigned int i = 0; i < connections.size(); i++)
+            {
+                if (connections[i].to == 0 || connections[i].from == 0)
+                    continue;
+                int nAct = connections[i].bwdAct + connections[i].fwdAct;
+
+                if (nAct > 0)
+                {
+                    const auto from = connections[i].from->camToWorld.translation().cast<float>();
+                    const auto to = connections[i].to->camToWorld.translation().cast<float>();
+                    auto &fp = msg->points.emplace_back();
+                    fp.x = from.x();
+                    fp.y = from.y();
+                    fp.z = from.z();
+                    auto &tp = msg->points.emplace_back();
+                    tp.x = to.x();
+                    tp.y = to.y();
+                    tp.z = to.z();
+                }
+            }
+            this->pub_constraints->publish(std::move(msg));
         }
     }
 

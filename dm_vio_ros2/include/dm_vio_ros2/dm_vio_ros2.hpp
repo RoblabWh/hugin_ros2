@@ -27,9 +27,27 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+
+namespace dso
+{
+    namespace IOWrap
+    {
+        class KeyFrameDisplay;
+    }
+}
 
 namespace dmvio
 {
+    using dso::IOWrap::KeyFrameDisplay;
+
+    struct GraphConnection
+    {
+      KeyFrameDisplay *from;
+      KeyFrameDisplay *to;
+      int fwdMarg, bwdMarg, fwdAct, bwdAct;
+    };
+
     class ROS2Wrapper : public dso::IOWrap::Output3DWrapper, public rclcpp::Node
     {
     public:
@@ -69,6 +87,9 @@ namespace dmvio
         virtual void pushDepthImage(dso::MinimalImageB3 *image, dso::FrameHessian *KF) override;
         virtual void pushDepthImageFloat(dso::MinimalImageF *image, dso::FrameHessian *KF) override;
 
+        virtual void publishKeyframes(std::vector<dso::FrameHessian *> &frames, bool final, dso::CalibHessian *HCalib) override;
+        virtual void publishGraph(const std::map<uint64_t, Eigen::Vector2i, std::less<uint64_t>, Eigen::aligned_allocator<std::pair<const uint64_t, Eigen::Vector2i>>> &connectivity) override;
+
     private:
         void reset_system();
 
@@ -91,6 +112,7 @@ namespace dmvio
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_dso;
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odometry;
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_image_live, pub_depth_image, pub_depth_float;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_keyframes, pub_pointcloud, pub_constraints, pub_trajectory;
 
         rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_reset_origin;
         rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr pub_reset_origin;
@@ -106,6 +128,8 @@ namespace dmvio
 
         std::string frame_origin, frame_odom, frame_base, frame_imu, frame_camera;
         bool publish_tf, update_origin, reset_origin = false;
+
+        visualization_msgs::msg::Marker trajectory;
 
         // Protects transformDSOToIMU.
         std::mutex mutex;
@@ -133,6 +157,12 @@ namespace dmvio
         bool stopSystem = false;
         size_t start = 2;
         double camTimeOffset = 0.0;
+
+        // 3D model rendering
+        std::unique_ptr<KeyFrameDisplay> currentCam;
+        std::vector<KeyFrameDisplay *> keyframes;
+        std::map<int, KeyFrameDisplay *> keyframesByKFID;
+        std::vector<GraphConnection, Eigen::aligned_allocator<GraphConnection>> connections;
     };
 
 }
