@@ -118,6 +118,8 @@ namespace dmvio
         this->declare_parameter("max_skip_visual_inertial", 2);
         this->declare_parameter("max_skip_full_reset", -1);
         this->declare_parameter("skip_delay_visual_only", 20);
+        this->declare_parameter("imu_noise_factor", 160.0);
+        this->declare_parameter("imu_bias_factor", 500.0);
 
         this->declare_parameter("frame_origin", "origin");
         this->declare_parameter("frame_odom", "odom");
@@ -138,6 +140,8 @@ namespace dmvio
         bool use_imu = this->get_parameter("use_imu").as_bool();
         bool use_exposure = this->get_parameter("use_exposure").as_bool();
         bool use_image_info = this->get_parameter("use_image_info").as_bool();
+        double imu_noise_factor = this->get_parameter("imu_noise_factor").as_double();
+        double imu_bias_factor = this->get_parameter("imu_bias_factor").as_double();
         this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
@@ -238,7 +242,7 @@ namespace dmvio
             this->undistorter->getK().cast<float>(),
             this->dsoSettings.pyrLevelsUsed);
 
-        this->imuCalibration.loadFromFile(calib_path, this->dsoSettings.multiCameraIndex);
+        this->imuCalibration.loadFromFile(calib_path, this->dsoSettings.multiCameraIndex, imu_noise_factor, imu_bias_factor);
 
         // setup ros
         const auto setup_time = get_clock()->now();
