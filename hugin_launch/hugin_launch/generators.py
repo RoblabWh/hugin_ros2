@@ -48,7 +48,7 @@ def dai_source(context) -> list[ComposableNode]:
     ]
 
 
-def bag_source(context) -> list[ComposableNode]:
+def bag_source(context, remappings=None) -> list[ComposableNode]:
     return [
         ComposableNode(
             package="rosbag2_transport",
@@ -58,10 +58,12 @@ def bag_source(context) -> list[ComposableNode]:
                 {
                     "play.loop": boolean(LaunchConfiguration("loop").perform(context)),
                     "play.disable_keyboard_controls": True,
+                    "play.clock_publish_on_topic_publish": True,
                     "storage.uri": LaunchConfiguration("input").perform(context),
                     "storage.max_cache_size": 2**32,
                 }
             ],
+            remappings=remappings,
             extra_arguments=[{"use_intra_process_comms": True}],
         )
     ]
@@ -145,18 +147,7 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
     return vio_nodes
 
 
-def dai_recorder(context) -> list[ComposableNode]:
-    cam_hz = int(LaunchConfiguration("cam_hz").perform(context))
-    imu_hz = int(LaunchConfiguration("imu_hz").perform(context))
-
-    record_topics = list()
-    if cam_hz > 0:
-        for cam_id in integer_list(LaunchConfiguration("cameras").perform(context)):
-            record_topics.append(f"/cam{cam_id}/image_raw")
-            record_topics.append(f"/cam{cam_id}/image_info")
-    if imu_hz > 0:
-        record_topics.append("/imu/data_raw")
-
+def _data_recorder(topics: list[str], context) -> list[ComposableNode]:
     return [
         ComposableNode(
             package="rosbag2_transport",
@@ -164,18 +155,48 @@ def dai_recorder(context) -> list[ComposableNode]:
             name="recorder",
             parameters=[
                 {
-                    "record.topics": record_topics,
+                    "record.topics": topics,
                     "record.is_discovery_disabled": True,
                     "record.disable_keyboard_controls": True,
-                    "storage.uri": LaunchConfiguration("output"),
+                    "storage.uri": LaunchConfiguration("output").perform(context),
                     "storage.max_cache_size": 2**32,
-                    # TODO test different presets
-                    # "storage.storage_preset_profile": "zstd_small",
                 }
             ],
             extra_arguments=[{"use_intra_process_comms": True}],
         )
     ]
+
+
+def sensor_recorder(context) -> list[ComposableNode]:
+    topics = list()
+
+    for cam_id in integer_list(LaunchConfiguration("cameras").perform(context)):
+        topics.append(f"/cam{cam_id}/image_raw")
+        topics.append(f"/cam{cam_id}/image_info")
+    topics.append("imu/data_raw")
+
+    topics.append("/mavros/imu/data")  # Orientation from i.e. compass
+    topics.append(
+        "/mavros/imu/data_raw"
+    )  # Angular velocity and linear acceleration from first IMU
+    topics.append("/mavros/global_position/raw/fix")  # GPS data
+
+    # TODO add mocap topic if available
+    topics.append("/gt/trigger")
+
+    return _data_recorder(topics, context)
+
+
+def odometry_recorder(context) -> list[ComposableNode]:
+    topics = list()
+
+    for cam_id in integer_list(LaunchConfiguration("cameras").perform(context)):
+        topics.append(f"/cam{cam_id}/odometry")
+    topics.append("odometry")
+    topics.append("navsat/odometry")
+    topics.append("/tf_static")
+
+    return _data_recorder(topics, context)
 
 
 #################

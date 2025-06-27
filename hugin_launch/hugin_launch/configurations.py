@@ -178,10 +178,7 @@ dm_vio_nodes = [
     tf_base_imu,
 ]
 
-dai_recorder = [
-    cameras,
-    cam_hz,
-    imu_hz,
+_data_recorder = [
     DeclareLaunchArgument(
         "output",
         description="Path to output bag",
@@ -193,6 +190,8 @@ dai_recorder = [
         description="Seconds to wait until sigterm is send",
     ),
 ]
+sensor_recorder = _data_recorder + [cameras]
+odometry_recorder = _data_recorder + [cameras]
 
 kalman_filter = [
     cameras,
