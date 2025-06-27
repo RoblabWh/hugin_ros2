@@ -1,39 +1,17 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import hugin_launch.configurations as cfg
 
 
 def generate_launch_description():
     return LaunchDescription(
-        [
-            DeclareLaunchArgument(
-                "fcu_url",
-                #TODO adjust
-                default_value="/dev/ttyTHS1:230400",
-                description="FCU URL",
-            ),
-            DeclareLaunchArgument(
-                "gcs_url",
-                default_value="",
-                description="GCS URL",
-            ),
-            DeclareLaunchArgument(
-                "tgt_system",
-                default_value="1",
-                description="Target system ID",
-            ),
-            DeclareLaunchArgument(
-                "tgt_component",
-                default_value="1",
-                description="Target component ID",
-            ),
-            DeclareLaunchArgument(
-                "fcu_protocol",
-                default_value="v2.0",
-                description="FCU protocol version",
-            ),
+        cfg.mavros
+        + cfg.tf_base_fcu
+        + cfg.tf_base_gps
+        + [
+            cfg.log_level,
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -48,6 +26,9 @@ def generate_launch_description():
                             "sys_*",
                             "command",
                             "imu",
+                            "global_position",
+                            "local_position",
+                            "odometry",
                         ],
                     },
                     PathJoinSubstitution(
@@ -58,7 +39,13 @@ def generate_launch_description():
                         ]
                     ),
                 ],
-                output="screen",
+                remappings=[
+                    ("/mavros/odometry/out", "/odometry"),
+                    ("/mavros/odometry/in", "/mavros/odometry/unused"),
+                    ("/mavros/local_position/odom", "/mavros/odometry"),
+                ],
+                ros_arguments=["--log-level", LaunchConfiguration("log_level")],
+                output="both",
             ),
         ]
     )

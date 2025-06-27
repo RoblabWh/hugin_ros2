@@ -67,69 +67,49 @@ frame_gps = DeclareLaunchArgument(
 ##############
 
 
-tf_base_imu = Node(
-    package="tf2_ros",
-    executable="static_transform_publisher",
-    name="tf_base_imu",
-    arguments=[
-        #NOTE translation from f3d
-        "--x",
-        "0.02796",
-        "--y",
-        "-0.009015",
-        "--z",
-        "0.038742",
-        "--roll",
-        str(radians(180)),
-        "--yaw",
-        str(radians(90)),
-        "--frame-id",
-        LaunchConfiguration("frame_base"),
-        "--child-frame-id",
-        LaunchConfiguration("frame_imu"),
-    ],
-    output="screen",
-)
+tf_base_fcu = [
+    Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="tf_base_fcu",
+        arguments=[
+            # NOTE translations from f3d
+            # NOTE tf to center of fcu (never needed)
+            # "--z",
+            # "0.0025",
+            # NOTE tf to first IMU on fcu (only needed tf so publish this)
+            "--x",
+            "-0.003913",
+            "--y",
+            "0.011861",
+            "--z",
+            "-0.0033",
+            "--frame-id",
+            LaunchConfiguration("frame_base"),
+            "--child-frame-id",
+            LaunchConfiguration("frame_fcu"),
+        ],
+        output="screen",
+    )
+]
 
-tf_base_fcu = Node(
-    package="tf2_ros",
-    executable="static_transform_publisher",
-    name="tf_base_fcu",
-    arguments=[
-        #NOTE translation from f3d
-        #NOTE tf to center of fcu (never needed)
-        # "--z",
-        # "0.0025",
-        #NOTE tf to first IMU on fcu (only needed tf so publish this)
-        "--x",
-        "-0.003913",
-        "--y",
-        "0.011861",
-        "--z",
-        "-0.0033",
-        "--frame-id",
-        LaunchConfiguration("frame_base"),
-        "--child-frame-id",
-        LaunchConfiguration("frame_fcu"),
-    ],
-    output="screen",
-)
-
-tf_base_gps = Node(
-    package="tf2_ros",
-    executable="static_transform_publisher",
-    name="tf_base_gps",
-    arguments=[
-        #NOTE translation from f3d
-        "--z",
-        "0.1",
-        "--frame-id",
-        LaunchConfiguration("frame_base"),
-        "--child-frame-id",
-        LaunchConfiguration("frame_gps"),
-    ],
-    output="screen",
-)
+tf_base_gps = [
+    Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="tf_base_gps",
+        arguments=[
+            # NOTE translation from f3d
+            "--z",
+            "0.1",
+            "--frame-id",
+            LaunchConfiguration("frame_base"),
+            "--child-frame-id",
+            LaunchConfiguration("frame_gps"),
+        ],
+        output="screen",
+    )
+]
 
 ######################
 ### Configurations ###
@@ -204,4 +184,36 @@ kalman_filter = [
     cameras,
     frame_odom,
     frame_base,
+]
+
+mavros = [
+    DeclareLaunchArgument(
+        "fcu_url",
+        default_value="/dev/ttyTHS2:460800",
+        description="FCU URL",
+    ),
+    DeclareLaunchArgument(
+        "gcs_url",
+        default_value="",
+        description="GCS URL",
+    ),
+    DeclareLaunchArgument(
+        "tgt_system",
+        default_value="1",
+        description="Target system ID",
+    ),
+    DeclareLaunchArgument(
+        "tgt_component",
+        default_value="1",
+        description="Target component ID",
+    ),
+    DeclareLaunchArgument(
+        "fcu_protocol",
+        default_value="v2.0",
+        description="FCU protocol version",
+    ),
+    frame_odom,
+    frame_base,
+    frame_fcu,
+    frame_gps,
 ]

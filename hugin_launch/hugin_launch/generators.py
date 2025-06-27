@@ -1,8 +1,10 @@
 from launch import LaunchDescriptionEntity
-from launch.substitutions import LaunchConfiguration
-from launch_ros.descriptions import ComposableNode
+from launch.actions import IncludeLaunchDescription
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import ComposableNodeContainer, Node
-from .utils import boolean, integer_list
+from launch_ros.descriptions import ComposableNode
+from launch_ros.substitutions import FindPackageShare
 from .configurations import log_level
 
 
@@ -269,4 +271,25 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
             ros_arguments=["--log-level", LaunchConfiguration("log_level")],
             output="screen",
         ),
+###################
+# Launch Includes #
+###################
+
+
+def mavros() -> list[LaunchDescriptionEntity]:
+    return [
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("hugin_launch"),
+                        "launch",
+                        "mavros.launch.py",
+                    ]
+                )
+            ),
+        )
+    ]
+
+
     ]
