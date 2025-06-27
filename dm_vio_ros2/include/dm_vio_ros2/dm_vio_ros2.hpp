@@ -122,7 +122,7 @@ namespace dmvio
 
         rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_camera_info;
         std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfsbc_imu_camera;
-        std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_imu_camera, tfbc_odom_base;
+        std::unique_ptr<tf2_ros::TransformBroadcaster> tfbc_odom_base;
         std::unique_ptr<tf2_ros::Buffer> tf_buffer;
         std::unique_ptr<tf2_ros::TransformListener> tf_listener;
 

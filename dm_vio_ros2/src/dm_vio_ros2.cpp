@@ -113,7 +113,7 @@ namespace dmvio
         this->declare_parameter("use_image_info", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
-        this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm-vio-results");
+        this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm_vio_results");
         this->declare_parameter("max_skip_visual_init", 0);
         this->declare_parameter("max_skip_visual_only", 1);
         this->declare_parameter("max_skip_visual_inertial", 2);
@@ -287,8 +287,6 @@ namespace dmvio
         this->tfbc_origin_odom = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
 
         this->tfsbc_imu_camera = std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
-        this->tfbc_imu_camera = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-
         this->tfbc_odom_base = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
         this->tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -318,9 +316,6 @@ namespace dmvio
         tf_imu_camera.header.frame_id = this->frame_imu;
         tf_imu_camera.child_frame_id = this->frame_camera;
         setTransformFromSE3(calib.T_i_c[this->dsoSettings.multiCameraIndex], tf_imu_camera.transform);
-        tfbc_imu_camera->sendTransform(tf_imu_camera);
-
-        tf_imu_camera.child_frame_id += "_calibration";
         tfsbc_imu_camera->sendTransform(tf_imu_camera);
 
         rclcpp::PublisherOptions static_pub_options;
