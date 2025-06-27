@@ -128,6 +128,7 @@ namespace dmvio
 
         std::string frame_origin, frame_odom, frame_base, frame_imu, frame_camera;
         bool publish_tf, update_origin, reset_origin = false;
+        double covariance_linear, covariance_angular;
 
         visualization_msgs::msg::Marker trajectory;
 

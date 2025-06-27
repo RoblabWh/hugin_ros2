@@ -73,6 +73,44 @@ namespace dmvio
         pose.orientation.w = rotation.w();
     }
 
+    inline void setCovarianceMatrixFromValues(double linear, double angular, std::array<double, 36> &covariance)
+    {
+        covariance[0] = linear;
+        covariance[7] = linear;
+        covariance[14] = linear;
+        covariance[21] = angular;
+        covariance[28] = angular;
+        covariance[35] = angular;
+    }
+    inline void setCovarianceMatrixFromVectors(const Eigen::Vector3d &linear, const Eigen::Vector3d &angular, std::array<double, 36> &covariance)
+    {
+        covariance[0] = linear.x();
+        covariance[7] = linear.y();
+        covariance[14] = linear.z();
+        covariance[21] = angular.x();
+        covariance[28] = angular.y();
+        covariance[35] = angular.z();
+    }
+    inline void setCovarianceMatrixFromVector(const Eigen::Vector<double, 6> &variance, std::array<double, 36> &covariance)
+    {
+        covariance[0] = variance[0];
+        covariance[7] = variance[1];
+        covariance[14] = variance[2];
+        covariance[21] = variance[3];
+        covariance[28] = variance[4];
+        covariance[35] = variance[5];
+    }
+
+    inline void setCovarianceMatrixFromTwist(const geometry_msgs::msg::Twist &twist, double scale_linear, double scale_angular,std::array<double, 36> &covariance)
+    {
+        covariance[0] = std::abs(twist.linear.x) * scale_linear;
+        covariance[7] = std::abs(twist.linear.y) * scale_linear;
+        covariance[14] = std::abs(twist.linear.z) * scale_linear;
+        covariance[21] = std::abs(twist.angular.x) * scale_angular;
+        covariance[28] = std::abs(twist.angular.y) * scale_angular;
+        covariance[35] = std::abs(twist.angular.z) * scale_angular;
+    }
+
     inline rclcpp::Time stampFromDSO(double timestamp)
     {
         return std::move(rclcpp::Time(timestamp * 1e9));
@@ -130,6 +168,9 @@ namespace dmvio
         this->declare_parameter("publish_tf", true);
         this->declare_parameter("update_origin", false);
 
+        this->declare_parameter("covariance_linear", 0.001);
+        this->declare_parameter("covariance_angular", 0.001);
+
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
         this->dsoSettings.multiCameraIndex = this->get_parameter("camera_index").as_int();
@@ -157,6 +198,9 @@ namespace dmvio
         this->frame_camera = this->get_parameter("frame_camera").as_string();
         this->publish_tf = this->get_parameter("publish_tf").as_bool();
         this->update_origin = this->get_parameter("update_origin").as_bool();
+
+        this->covariance_linear = this->get_parameter("covariance_linear").as_double();
+        this->covariance_angular = this->get_parameter("covariance_angular").as_double();
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
@@ -439,15 +483,15 @@ namespace dmvio
                     odomMsg->child_frame_id = this->frame_imu;
 
                     tf2::toMsg(tf2_odom_base, odomMsg->pose.pose);
-                    // TODO set covariance
 
                     // Compute velocity
                     const auto lastImuToWorld = Sophus::SE3d(this->transformDSOToIMU->transformPose(this->lastCamToWorld.inverse().matrix()));
 
                     const auto diffTransform = lastImuToWorld.inverse() * imuToWorld;
                     const auto diffTimestamp = frame->timestamp - this->lastTimestamp;
-                    const auto linVel = diffTransform.translation() / diffTimestamp;
-                    // compute in to steps to trick eigen to evaluate
+                    const auto linDelta = diffTransform.translation();
+                    const auto linVel = linDelta / diffTimestamp;
+                    // compute in two steps to trick Eigen to evaluate
                     const auto angDelta = diffTransform.so3().log();
                     const auto angVel = angDelta / diffTimestamp;
 
@@ -457,7 +501,14 @@ namespace dmvio
                     odomMsg->twist.twist.angular.x = angVel.x();
                     odomMsg->twist.twist.angular.y = angVel.y();
                     odomMsg->twist.twist.angular.z = angVel.z();
-                    // TODO set covariance
+
+                    // Set covariance matrices
+                    setCovarianceMatrixFromValues(this->covariance_linear, this->covariance_angular, odomMsg->pose.covariance);
+                    setCovarianceMatrixFromValues(this->covariance_linear, this->covariance_angular, odomMsg->twist.covariance);
+                    // setCovarianceMatrixFromVectors(linDelta * this->covariance_linear, angDelta * this->covariance_angular, odomMsg->pose.covariance);
+                    // setCovarianceMatrixFromVectors(linDelta * this->covariance_linear, angDelta * this->covariance_angular, odomMsg->twist.covariance);
+                    // setCovarianceMatrixFromTwist(odomMsg->twist.twist, this->covariance_linear, this->covariance_angular, odomMsg->pose.covariance);
+                    // setCovarianceMatrixFromTwist(odomMsg->twist.twist, this->covariance_linear, this->covariance_angular, odomMsg->twist.covariance);
 
                     this->pub_odometry->publish(std::move(odomMsg));
                 }
