@@ -234,9 +234,39 @@ dm_vio_nodes = [
         "nolog", default_value="true", description="DM-VIO disable logging"
     ),
     DeclareLaunchArgument(
+        "max_skip_visual_init",
+        default_value="0",
+        description="Maximum number of frames to skip during visual initialization",
+    ),
+    DeclareLaunchArgument(
+        "max_skip_visual_only",
+        default_value="1",
+        description="Maximum number of frames to skip during visual only mode",
+    ),
+    DeclareLaunchArgument(
+        "max_skip_visual_inertial",
+        default_value="2",
+        description="Maximum number of frames to skip during visual inertial mode",
+    ),
+    DeclareLaunchArgument(
+        "max_skip_full_reset",
+        default_value="-1",
+        description="Maximum number of frames to skip on full reset",
+    ),
+    DeclareLaunchArgument(
         "results_path",
         default_value=PathJoinSubstitution([gettempdir(), "dm_vio_results"]),
         description="Path to store DM-VIO results",
+    ),
+    DeclareLaunchArgument(
+        "imu_noise_factor",
+        default_value="160.0",
+        description="Factor to inflate IMU noise by",
+    ),
+    DeclareLaunchArgument(
+        "imu_bias_factor",
+        default_value="500.0",
+        description="Factor to inflate IMU bias by",
     ),
     frame_odom,
     frame_base,

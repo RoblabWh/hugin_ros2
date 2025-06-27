@@ -123,6 +123,12 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "max_skip_full_reset": int(
                             LaunchConfiguration("max_skip_full_reset").perform(context)
                         ),
+                        "imu_noise_factor": float(
+                            LaunchConfiguration("imu_noise_factor").perform(context)
+                        ),
+                        "imu_bias_factor": float(
+                            LaunchConfiguration("imu_bias_factor").perform(context)
+                        ),
                         "skip_delay_visual_only": int(
                             LaunchConfiguration("cam_hz").perform(context)
                         ),
@@ -147,6 +153,12 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "update_origin": boolean(
                             LaunchConfiguration("update_origin").perform(context)
                         ),
+                        "covariance_linear": float(
+                            LaunchConfiguration("cov_lin").perform(context)
+                        ),
+                        "covariance_angular": float(
+                            LaunchConfiguration("cov_ang").perform(context)
+                        ),
                     }
                 ],
                 remappings=[
@@ -161,6 +173,10 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                     ("image_depth", f"cam{cam_id}/image_depth"),
                     ("image_depth_float", f"cam{cam_id}/image_depth_float"),
                     ("camera_info", f"cam{cam_id}/camera_info"),
+                    ("keyframes", f"cam{cam_id}/keyframes"),
+                    ("pointscloud", f"cam{cam_id}/pointscloud"),
+                    ("constraints", f"cam{cam_id}/constraints"),
+                    ("trajectory", f"cam{cam_id}/trajectory"),
                 ],
                 extra_arguments=[{"use_intra_process_comms": True}],
             )
