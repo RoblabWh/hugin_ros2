@@ -30,7 +30,7 @@
 /**/global_position:
   ros__parameters:
     frame_id: "map"               # origin frame
-    child_frame_id: "base_link"   # body-fixed frame
+    child_frame_id: "gps"         # body-fixed frame
     rot_covariance: 99999.0       # covariance for attitude?
     gps_uere: 1.0                 # User Equivalent Range Error (UERE) of GPS sensor (m)
     use_relative_alt: true        # use relative altitude for local coordinates
@@ -43,18 +43,18 @@
 /**/imu:
   ros__parameters:
     frame_id: "fcu"
-    #TODO need find actual values
-    linear_acceleration_stdev: 0.0003
-    angular_velocity_stdev: 0.0003490659  # 0.02 degrees
+    # NOTE Calibration parameters from allan plot
+    linear_acceleration_stdev: 0.0005160477571918528
+    angular_velocity_stdev: 0.00005401038290097826
     orientation_stdev: 1.0
     magnetic_stdev: 0.0
 
 # local_position
 /**/local_position:
   ros__parameters:
-    frame_id: "map"
+    frame_id: "odom"
     tf.send: false
-    tf.frame_id: "map"
+    tf.frame_id: "odom"
     tf.child_frame_id: "base_link"
     tf.send_fcu: false
 

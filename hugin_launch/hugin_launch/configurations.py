@@ -1,7 +1,14 @@
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    EqualsSubstitution,
+)
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 from .utils import radians
+from tempfile import gettempdir
 
 ####################
 # Common Arguments #
@@ -36,12 +43,16 @@ imu_hz = DeclareLaunchArgument(
     description="IMU frequency",
 )
 calibration = DeclareLaunchArgument(
-    "calibration", description="Path to basalt calibration.json"
+    "calibration",
+    description="Path to basalt calibration.json",
+    default_value=PathJoinSubstitution(
+        [FindPackageShare("hugin_launch"), "config", "calibration.json"]
+    ),
 )
 
 ## TF2
 publish_tf = DeclareLaunchArgument(
-    "publish_tf", default_value="true", description="Publish TF"
+    "publish_tf", default_value="false", description="Publish TF"
 )
 frame_odom = DeclareLaunchArgument(
     "frame_odom", default_value="odom", description="frame_id of VIO"
@@ -66,6 +77,73 @@ frame_gps = DeclareLaunchArgument(
 # Static TFs #
 ##############
 
+tfs_base_imu = [
+    DeclareLaunchArgument(
+        "imu_tf_type", default_value="hugin", description="IMU TF type"
+    ),
+    Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="tf_base_imu",
+        arguments=[
+            # NOTE translation from f3d
+            "--x",
+            "0.02796",
+            "--y",
+            "-0.009015",
+            "--z",
+            "0.038742",
+            "--roll",
+            str(radians(180)),
+            "--yaw",
+            str(radians(90)),
+            "--frame-id",
+            LaunchConfiguration("frame_base"),
+            "--child-frame-id",
+            LaunchConfiguration("frame_imu"),
+        ],
+        output="screen",
+        condition=IfCondition(
+            EqualsSubstitution(LaunchConfiguration("imu_tf_type"), "hugin")
+        ),
+    ),
+    Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="tf_base_imu",
+        arguments=[
+            "--yaw",
+            str(radians(90)),
+            "--frame-id",
+            LaunchConfiguration("frame_base"),
+            "--child-frame-id",
+            LaunchConfiguration("frame_imu"),
+        ],
+        output="screen",
+        condition=IfCondition(
+            EqualsSubstitution(LaunchConfiguration("imu_tf_type"), "tumvi")
+        ),
+    ),
+    Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="tf_base_imu",
+        arguments=[
+            "--roll",
+            str(radians(180)),
+            "--pitch",
+            str(radians(-90)),
+            "--frame-id",
+            LaunchConfiguration("frame_base"),
+            "--child-frame-id",
+            LaunchConfiguration("frame_imu"),
+        ],
+        output="screen",
+        condition=IfCondition(
+            EqualsSubstitution(LaunchConfiguration("imu_tf_type"), "euroc")
+        ),
+    ),
+]
 
 tf_base_fcu = [
     Node(
@@ -147,22 +225,42 @@ dm_vio_nodes = [
     ),
     DeclareLaunchArgument("enable_imu", default_value="true", description="Enable IMU"),
     DeclareLaunchArgument(
+        "enable_exposure", default_value="true", description="Enable Exposure"
+    ),
+    DeclareLaunchArgument(
         "quiet", default_value="true", description="DM-VIO disable console output"
     ),
     DeclareLaunchArgument(
         "nolog", default_value="true", description="DM-VIO disable logging"
     ),
-    DeclareLaunchArgument("max_skip_visual_init", default_value="0", description="Maximum number of frames to skip during visual initialization"),
-    DeclareLaunchArgument("max_skip_visual_only", default_value="1", description="Maximum number of frames to skip during visual only mode"),
-    DeclareLaunchArgument("max_skip_visual_inertial", default_value="2", description="Maximum number of frames to skip during visual inertial mode"),
-    DeclareLaunchArgument("max_skip_full_reset", default_value="-1", description="Maximum number of frames to skip on full reset"),
+    DeclareLaunchArgument(
+        "results_path",
+        default_value=PathJoinSubstitution([gettempdir(), "dm_vio_results"]),
+        description="Path to store DM-VIO results",
+    ),
     frame_odom,
     frame_base,
     frame_imu,
     publish_tf,
-    DeclareLaunchArgument("update_origin", default_value="false", description="Trigger update of origin on initialization"),
-    tf_base_imu,
-]
+    DeclareLaunchArgument(
+        "update_origin",
+        default_value="false",
+        description="Trigger update of origin on initialization",
+    ),
+    DeclareLaunchArgument(
+        "use_image_info", default_value="true", description="Use image info messages"
+    ),
+    DeclareLaunchArgument(
+        "cov_lin",
+        default_value="0.001",
+        description="Linear covariance for DM-VIO",
+    ),
+    DeclareLaunchArgument(
+        "cov_ang",
+        default_value="0.001",
+        description="Angular covariance for DM-VIO",
+    ),
+] + tfs_base_imu
 
 _data_recorder = [
     DeclareLaunchArgument(

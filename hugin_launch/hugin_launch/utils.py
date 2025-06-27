@@ -1,5 +1,6 @@
 from math import pi
-from launch.actions import DeclareLaunchArgument
+from launch.actions import OpaqueFunction, Shutdown
+from launch_ros.ros_adapters import get_ros_adapter
 
 
 def boolean(arg: str):
@@ -28,13 +29,25 @@ def degrees(rad: float) -> float:
     return rad / pi * 180
 
 
-def DeclareLaunchArgumentWithNewDefault(
-    base: DeclareLaunchArgument, default_value: str
-) -> DeclareLaunchArgument:
-    """Create DeclareLaunchArgument with new default value."""
-    return DeclareLaunchArgument(
-        base.name,
-        default_value=default_value,
-        description=base.description,
-        condition=base.condition,
+def ShutdownFailure(reason: str) -> OpaqueFunction:
+    """Create an OpaqueFunction that raises a RuntimeError on shutdown."""
+
+    def throw_shutdown_error(context, reason: str):
+        """Raise a RuntimeError with the given reason."""
+        if get_ros_adapter(context)._ROSAdapter__is_running:
+            raise RuntimeError(reason)
+
+    return OpaqueFunction(
+        function=lambda context: throw_shutdown_error(context, reason)
     )
+
+
+def ShutdownClean(reason: str) -> OpaqueFunction:
+    """Create an OpaqueFunction that shuts down the ROS adapter on shutdown."""
+
+    def clean_shutdown(context):
+        """Shutdown the ROS adapter cleanly."""
+        if get_ros_adapter(context)._ROSAdapter__is_running:
+            return [Shutdown(reason=reason)]
+
+    return OpaqueFunction(function=clean_shutdown)

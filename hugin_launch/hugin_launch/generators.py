@@ -5,10 +5,14 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 from launch_ros.substitutions import FindPackageShare
+from .utils import boolean, integer_list, ShutdownClean, ShutdownFailure
 from .configurations import log_level
+from os import mkdir
 
 
-def compose(name: str, nodes: list[ComposableNode]) -> list[LaunchDescriptionEntity]:
+def compose(
+    name: str, nodes: list[ComposableNode], tty: bool = True, output: str = "screen"
+) -> list[LaunchDescriptionEntity]:
     return [
         log_level,
         ComposableNodeContainer(
@@ -18,8 +22,9 @@ def compose(name: str, nodes: list[ComposableNode]) -> list[LaunchDescriptionEnt
             namespace="",
             composable_node_descriptions=nodes,
             ros_arguments=["--log-level", LaunchConfiguration("log_level")],
-            emulate_tty=True,
-            output="screen",
+            emulate_tty=tty,
+            output=output,
+            on_exit=ShutdownFailure(reason="Component container exited unexpectedly"),
         ),
     ]
 
@@ -74,6 +79,11 @@ def bag_source(context, remappings=None) -> list[ComposableNode]:
 def dm_vio_nodes(context) -> list[ComposableNode]:
     vio_nodes = list()
     for cam_id in integer_list(LaunchConfiguration("cameras").perform(context)):
+        results_base_path = LaunchConfiguration("results_path").perform(context)
+        try:
+            mkdir(results_base_path)
+        except FileExistsError:
+            pass
         vio_nodes.append(
             ComposableNode(
                 package="dm_vio_ros2",
@@ -90,6 +100,12 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "preset": int(LaunchConfiguration("preset").perform(context)),
                         "use_imu": boolean(
                             LaunchConfiguration("enable_imu").perform(context)
+                        ),
+                        "use_exposure": boolean(
+                            LaunchConfiguration("enable_exposure").perform(context)
+                        ),
+                        "use_image_info": boolean(
+                            LaunchConfiguration("use_image_info").perform(context)
                         ),
                         "quiet": boolean(LaunchConfiguration("quiet").perform(context)),
                         "nolog": boolean(LaunchConfiguration("nolog").perform(context)),
@@ -110,6 +126,9 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "skip_delay_visual_only": int(
                             LaunchConfiguration("cam_hz").perform(context)
                         ),
+                        "results_path": PathJoinSubstitution(
+                            [results_base_path, f"cam{cam_id}"]
+                        ).perform(context),
                         # TF
                         "frame_origin": LaunchConfiguration("frame_odom").perform(
                             context
@@ -271,6 +290,36 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
             ros_arguments=["--log-level", LaunchConfiguration("log_level")],
             output="screen",
         ),
+    ]
+
+
+def navsat_transform() -> list[LaunchDescriptionEntity]:
+    return [
+        log_level,
+        Node(
+            package="robot_localization",
+            executable="navsat_transform_node",
+            name="navsat_transform",
+            parameters=[
+                {
+                    "frequency": 5.0,
+                    # NOTE WH Google Maps Coords in https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
+                    "magnetic_declination_radians": 0.027663468644110123,
+                    "yaw_offset": 0.0,
+                }
+            ],
+            remappings=[
+                ("gps/fix", "/mavros/global_position/raw/fix"),
+                ("imu/data", "/mavros/imu/data"),
+                ("odometry/filtered", "odometry"),
+                ("odometry/gps", "navsat/odometry"),
+            ],
+            ros_arguments=["--log-level", LaunchConfiguration("log_level")],
+            output="screen",
+        ),
+    ]
+
+
 ###################
 # Launch Includes #
 ###################
@@ -292,4 +341,31 @@ def mavros() -> list[LaunchDescriptionEntity]:
     ]
 
 
+##########
+# Helper #
+##########
+
+
+def shutdown_on_bag_end(timeout: float = 1.0) -> list[LaunchDescriptionEntity]:
+    return [
+        Node(
+            package="hugin_launch",
+            executable="wait_for_bag_end",
+            name="wait_for_bag_end",
+            parameters=[{"timeout": timeout}],
+            output="both",
+            on_exit=ShutdownClean(reason="Bag finished"),
+        )
+    ]
+
+
+def gt_trigger_dummy() -> list[LaunchDescriptionEntity]:
+    return [
+        Node(
+            package="hugin_launch",
+            executable="dummy_publisher",
+            name="gt_trigger_dummy",
+            remappings=[("dummy", "/gt/trigger")],
+            output="both",
+        )
     ]
