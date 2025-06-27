@@ -242,36 +242,33 @@ def odometry_recorder(context) -> list[ComposableNode]:
 
 
 def kalman_filter(context) -> list[LaunchDescriptionEntity]:
+    cam_ids = integer_list(LaunchConfiguration("cameras").perform(context))
     ekf_inputs = {}
-    for i, cam_id in enumerate(
-        integer_list(LaunchConfiguration("cameras").perform(context))
-    ):
+    for i, cam_id in enumerate(cam_ids):
         sensor_name = f"odom{i}"
         sensor_topic = f"cam{cam_id}/odometry"
         ekf_inputs[sensor_name] = sensor_topic
+        # Fuse Velocities
+        # ekf_inputs[f"{sensor_name}_config"] = [
+        #     # Pos
+        #     False, False, False, False, False, False,
+        #     # Vel
+        #     True, True, True, True, True, True,
+        #     # Acc
+        #     False, False, False, False, False, False,
+        # ]
+        # Fuse Relative Position
         ekf_inputs[f"{sensor_name}_config"] = [
             # Pos
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
+            True, True, True,
             # Vel
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
+            False, False, False, False, False, False,
             # Acc
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
+            False, False, False, False, False, False,
         ]
+        ekf_inputs[f"{sensor_name}_relative"] = True
+        # TODO: Tune Rejection Threshold
+        # ekf_inputs[f"{sensor_name}_pose_rejection_threshold"] = 100.0
     return [
         log_level,
         Node(
@@ -298,6 +295,57 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
                         context
                     ),
                 },
+                {
+                    "imu0": "/mavros/imu/data_raw",
+                    # "imu0": "/mavros/imu/data_corrected",
+                    "imu0_config": [
+                        # Pos
+                        False, False, False, False, False, False,
+                        # Vel
+                        False, False, False, True, True, True,
+                        # Acc
+                        True, True, True, False, False, False,
+                    ],
+                    "imu0_queue_size": 20,
+                    # NOTE has to guess orientation from filter state
+                    "imu0_remove_gravitational_acceleration": True,
+                },
+                # {
+                #     # TODO: Tune covariances
+                #     "dynamics_process_noise_covariance": True,
+                #     "process_noise_covariance": [
+                #         # NOTE: Default values from robot_localization for reference
+                #         # # Pos
+                #         # 0.05, 0.05, 0.06, 0.03, 0.03, 0.06,
+                #         # # Vel
+                #         # 0.025, 0.025, 0.04, 0.01, 0.01, 0.02,
+                #         # # Acc
+                #         # 0.01, 0.01, 0.015,
+                #         # NOTE: Own tuned values
+                #         # Pos
+                #         5e-12, 5e-12, 6e-12, 3e-12, 3e-12, 6e-12,
+                #         # Vel
+                #         0.025, 0.025, 0.04, 0.01, 0.01, 0.02,
+                #         # Acc
+                #         0.01, 0.01, 0.015,
+                #     ],
+                #     "initial_estimate_covariance": [
+                #         # NOTE: Default values from robot_localization for reference
+                #         # # Pos
+                #         # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
+                #         # # Vel
+                #         # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
+                #         # # Acc
+                #         # 1e-9, 1e-9, 1e-9,
+                #         # NOTE: Own tuned values
+                #         # Pos
+                #         1e-15, 1e-15, 1e-15, 1e-15, 1e-15, 1e-15,
+                #         # Vel
+                #         1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
+                #         # Acc
+                #         1e-9, 1e-9, 1e-9,
+                #     ],
+                # },
                 ekf_inputs,
             ],
             remappings=[
@@ -306,7 +354,13 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
             ros_arguments=["--log-level", LaunchConfiguration("log_level")],
             output="screen",
         ),
-    ]
+        Node(
+            package="hugin_launch",
+            executable="reset_kalman_origin",
+            name="reset_kalman_origin",
+            parameters=[{"frame_odom": LaunchConfiguration("frame_odom")}],
+            output="both",
+        ),
 
 
 def navsat_transform() -> list[LaunchDescriptionEntity]:
