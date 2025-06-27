@@ -2,48 +2,9 @@ import rclpy
 import rclpy.node
 import rclpy.qos
 from rosgraph_msgs.msg import Clock
-from rosbag2_interfaces.srv import SplitBagfile
-from rosbag2_interfaces.msg import ReadSplitEvent
 from asyncio import Future
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from std_msgs.msg import Header
-
-
-def call_split_bagfile():
-    rclpy.init()
-    node = rclpy.create_node("call_split_bagfile")
-    cli = node.create_client(SplitBagfile, "split_bagfile")
-    try:
-        if not cli.wait_for_service(5.0):
-            node.get_logger().error("Service not available, exiting...")
-        else:
-            req = SplitBagfile.Request()
-            future = cli.call_async(req)
-            rclpy.spin_until_future_complete(node, future)
-            node.get_logger().info("Bagfile split")
-        node.destroy_node()
-        rclpy.shutdown()
-    except KeyboardInterrupt:
-        pass
-
-
-def wait_for_read_split():
-    rclpy.init()
-    node = rclpy.create_node("wait_for_read_split")
-    future = Future()
-    node.create_subscription(
-        ReadSplitEvent,
-        "events/read_split",
-        lambda _: node.get_logger().info("Received split event, exiting...")
-        and future.set_result(None),
-        rclpy.qos.qos_profile_services_default,
-    )
-    try:
-        rclpy.spin_until_future_complete(node, future)
-        node.destroy_node()
-        rclpy.shutdown()
-    except KeyboardInterrupt:
-        pass
 
 
 class WaitForBagEnd(rclpy.node.Node):

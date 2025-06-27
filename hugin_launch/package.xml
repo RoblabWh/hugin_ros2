@@ -7,6 +7,18 @@
   <maintainer email="niklas.digakis@studmail.w-hs.de">ndigakis</maintainer>
   <license>TODO: License declaration</license>
 
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>rosbag2_transport</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>mavros_extras</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>dai_vi_ros2</exec_depend>
+  <exec_depend>dm_vio_ros2</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
