@@ -242,7 +242,18 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
             executable="ekf_node",
             name="kalman_filter",
             parameters=[
-                ekf_inputs,
+                {
+                    "frequency": 20.0,
+                    "sensor_timeout": 0.5,
+                    # TODO for debugging
+                    # "print_diagnostics": True,
+                    # "debug": True,
+                    "smooth_lagged_data": True,
+                    "history_length": 5.0,
+                    "use_sim_time": boolean(
+                        LaunchConfiguration("use_sim_time").perform(context)
+                    ),
+                },
                 {
                     "world_frame": LaunchConfiguration("frame_odom").perform(context),
                     "odom_frame": LaunchConfiguration("frame_odom").perform(context),
@@ -250,6 +261,7 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
                         context
                     ),
                 },
+                ekf_inputs,
             ],
             remappings=[
                 ("odometry/filtered", "odometry"),

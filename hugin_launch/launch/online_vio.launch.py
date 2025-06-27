@@ -10,7 +10,7 @@ def generate_launch_description():
         + cfg.dm_vio_nodes
         + [
             OpaqueFunction(
-                function=lambda context, *args, **kwargs: gen.compose(
+                function=lambda context: gen.compose(
                     "vio_container", gen.dai_source(context) + gen.dm_vio_nodes(context)
                 )
             )

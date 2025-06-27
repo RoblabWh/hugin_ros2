@@ -6,13 +6,15 @@ import hugin_launch.configurations as cfg
 
 def generate_launch_description():
     return LaunchDescription(
-        cfg.bag_source
+        cfg.dai_source
         + cfg.dm_vio_nodes
+        + cfg.kalman_filter
         + [
             OpaqueFunction(
                 function=lambda context: gen.compose(
-                    "vio_container", gen.bag_source(context) + gen.dm_vio_nodes(context)
+                    "vio_container", gen.dai_source(context) + gen.dm_vio_nodes(context)
                 )
+                + gen.kalman_filter(context)
             )
         ]
     )

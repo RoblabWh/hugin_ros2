@@ -13,6 +13,12 @@ log_level = DeclareLaunchArgument(
     description="Log level",
 )
 
+use_sim_time = DeclareLaunchArgument(
+    "use_sim_time",
+    default_value="false",
+    description="Use simulation time",
+)
+
 ## Sensors
 cameras = DeclareLaunchArgument(
     "cameras",
@@ -194,6 +200,7 @@ sensor_recorder = _data_recorder + [cameras]
 odometry_recorder = _data_recorder + [cameras]
 
 kalman_filter = [
+    use_sim_time,
     cameras,
     frame_odom,
     frame_base,
