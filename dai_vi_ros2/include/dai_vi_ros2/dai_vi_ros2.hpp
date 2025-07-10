@@ -19,6 +19,7 @@ namespace dai_vi
   private:
     std::string cam_prefix;
     std::string frame_imu;
+    bool tumvi_exposure;
 
     std::chrono::nanoseconds time_offset;
 

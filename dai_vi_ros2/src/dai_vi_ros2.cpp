@@ -8,6 +8,7 @@
 
 namespace dai_vi
 {
+  const std::string DEFAULT_CAM_PREFIX = "cam";
 
   ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
       : Node("dai_vi", options)
@@ -20,7 +21,9 @@ namespace dai_vi
     declare_parameter("exposure", 0);
 
     declare_parameter("frame_imu", "imu");
-    declare_parameter("cam_prefix", "cam");
+    declare_parameter("cam_prefix", DEFAULT_CAM_PREFIX);
+
+    declare_parameter("tumvi_exposure", false);
 
     uint16_t imu_hz = get_parameter("imu_hz").as_int();
     uint16_t cam_hz = get_parameter("cam_hz").as_int();
@@ -30,6 +33,12 @@ namespace dai_vi
 
     frame_imu = get_parameter("frame_imu").as_string();
     cam_prefix = get_parameter("cam_prefix").as_string();
+
+    this->tumvi_exposure = get_parameter("tumvi_exposure").as_bool();
+    if (this->tumvi_exposure && cam_prefix != DEFAULT_CAM_PREFIX)
+    {
+      RCLCPP_WARN(get_logger(), "If 'tumvi_exposure' is enabled, 'cam_prefix' will be ignored.");
+    }
 
     auto ros_time = get_clock()->now();
     auto steady_time = std::chrono::steady_clock::now();
@@ -61,7 +70,8 @@ namespace dai_vi
           pub_cam_raw[name] = create_publisher<sensor_msgs::msg::Image>(name + "/image_raw", rclcpp::SensorDataQoS());
         else
           pub_cam_comp[name] = create_publisher<sensor_msgs::msg::CompressedImage>(name + "/image_raw/compressed", rclcpp::SensorDataQoS());
-        pub_cam_info[name] = create_publisher<image_info_msgs::msg::ImageInfo>(name + "/image_info", rclcpp::SensorDataQoS());
+        if (!tumvi_exposure)
+          pub_cam_info[name] = create_publisher<image_info_msgs::msg::ImageInfo>(name + "/image_info", rclcpp::SensorDataQoS());
       }
       sensor->cam_hz = cam_hz;
       sensor->encode = !pub_raw;
@@ -94,12 +104,22 @@ namespace dai_vi
       const auto &img = std::dynamic_pointer_cast<imgT>(msg);
       if constexpr (exact_stamp)
         header.stamp = rclcpp::Time((img->getTimestamp().time_since_epoch() + time_offset).count());
-      header.frame_id = name + "_optical_frame";
 
-      image_info_msgs::msg::ImageInfo img_info;
-      img_info.header = header;
-      img_info.exposure = rclcpp::Time(std::chrono::duration_cast<std::chrono::nanoseconds>(img->getExposureTime()).count());
-      img_info.iso = img->getSensitivity();
+      const auto exposure = std::chrono::duration_cast<std::chrono::nanoseconds>(img->getExposureTime()).count();
+      if (this->tumvi_exposure)
+      {
+        header.frame_id = std::to_string(exposure);
+      }
+      else
+      {
+        header.frame_id = name + "_optical_frame";
+
+        image_info_msgs::msg::ImageInfo img_info;
+        img_info.header = header;
+        img_info.exposure = rclcpp::Time(exposure);
+        img_info.iso = img->getSensitivity();
+        pub_cam_info[name]->publish(img_info);
+      }
 
       if constexpr (std::is_same_v<imgT, dai::ImgFrame>)
       {
@@ -137,7 +157,6 @@ namespace dai_vi
           pub->publish(std::move(ros_msg));
         }
       }
-      pub_cam_info[name]->publish(img_info);
     }
   }
 
