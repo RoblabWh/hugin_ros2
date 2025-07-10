@@ -143,6 +143,8 @@ namespace dmvio
         // declare params
         this->declare_parameter("calibration", "");
         this->declare_parameter("camera_index", 0);
+        this->declare_parameter("projection", std::vector<double>());
+        this->declare_parameter("resolution", std::vector<int>());
 
         this->declare_parameter("mode", 0);
         this->declare_parameter("preset", 0);
@@ -174,6 +176,12 @@ namespace dmvio
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
         this->dsoSettings.multiCameraIndex = this->get_parameter("camera_index").as_int();
+        std::vector<double> projection = this->get_parameter("projection").as_double_array();
+        if (projection.size() == 1 && projection[0] < 0)
+            projection.clear();
+        if (projection.size() != 0 && projection.size() != 1 && projection.size() != 2 && projection.size() != 4)
+            throw std::invalid_argument("Projection must be empty or a vector defined as [f_x [, fy [, cx, cy]]]!");
+        std::vector<int64_t> resolution = this->get_parameter("resolution").as_integer_array();
 
         int mode = this->get_parameter("mode").as_int();
         int preset = this->get_parameter("preset").as_int();
@@ -279,9 +287,14 @@ namespace dmvio
             this->dsoSettings.useExposure = false;
         }
 
-        this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(&dsoSettings, calib_path));
+        if (!resolution.empty())
+        {
+            this->dsoSettings.wTarget = resolution[0];
+            this->dsoSettings.hTarget = resolution.size() == 1 ? resolution[0] : resolution[1];
+        }
+        this->undistorter.reset(dso::Undistort::makeFromBasaltCalibration(&dsoSettings, calib_path, projection));
 
-        dsoSettings.calibG = dso::GlobalCalib(
+        this->dsoSettings.calibG = dso::GlobalCalib(
             this->undistorter->getSize()[0],
             this->undistorter->getSize()[1],
             this->undistorter->getK().cast<float>(),
