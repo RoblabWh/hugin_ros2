@@ -161,6 +161,9 @@ namespace dmvio
         this->declare_parameter("skip_delay_visual_only", 20);
         this->declare_parameter("imu_noise_factor", 160.0);
         this->declare_parameter("imu_bias_factor", 500.0);
+        this->declare_parameter("pgba_skip_first_kfs", 1);
+        this->declare_parameter("init_normalized_error_threshold", 1.0);
+        this->declare_parameter("max_time_between_init_frames", 1.0);
 
         this->declare_parameter("frame_origin", "origin");
         this->declare_parameter("frame_odom", "odom");
@@ -193,6 +196,9 @@ namespace dmvio
         double imu_noise_factor = this->get_parameter("imu_noise_factor").as_double();
         double imu_bias_factor = this->get_parameter("imu_bias_factor").as_double();
         this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
+        this->imuSettings.initSettings.pgbaSettings.skipFirstKFs = this->get_parameter("pgba_skip_first_kfs").as_int();
+        this->imuSettings.initSettings.coarseInitSettings.requestFullResetNormalizedErrorThreshold = this->get_parameter("init_normalized_error_threshold").as_double();
+        this->imuSettings.maxTimeBetweenInitFrames = this->get_parameter("max_time_between_init_frames").as_double();
         this->frameSkippingSettings.maxSkipFramesVisualInit = this->get_parameter("max_skip_visual_init").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualOnlyMode = this->get_parameter("max_skip_visual_only").as_int();
         this->frameSkippingSettings.maxSkipFramesVisualInertial = this->get_parameter("max_skip_visual_inertial").as_int();
