@@ -101,7 +101,7 @@ namespace dmvio
         covariance[35] = variance[5];
     }
 
-    inline void setCovarianceMatrixFromTwist(const geometry_msgs::msg::Twist &twist, double scale_linear, double scale_angular,std::array<double, 36> &covariance)
+    inline void setCovarianceMatrixFromTwist(const geometry_msgs::msg::Twist &twist, double scale_linear, double scale_angular, std::array<double, 36> &covariance)
     {
         covariance[0] = std::abs(twist.linear.x) * scale_linear;
         covariance[7] = std::abs(twist.linear.y) * scale_linear;
@@ -113,7 +113,7 @@ namespace dmvio
 
     inline rclcpp::Time stampFromDSO(double timestamp)
     {
-        return std::move(rclcpp::Time(timestamp * 1e9));
+        return rclcpp::Time(timestamp * 1e9);
     }
 
     void ROS2Wrapper::reset_system()
@@ -637,6 +637,7 @@ namespace dmvio
 
     void ROS2Wrapper::publishKeyframes(std::vector<dso::FrameHessian *> &frames, bool final, dso::CalibHessian *HCalib)
     {
+        (void) final;
         static const float color[3] = {0.0f, 0.0f, 1.0f};
         std::unique_lock<std::mutex> lk(mutex);
         const auto stamp = this->get_clock()->now();
@@ -907,6 +908,16 @@ namespace dmvio
                 RCLCPP_INFO(get_logger(), "RESETTING!");
                 this->reset_system();
                 this->dsoSettings.fullResetRequested = false;
+
+                visualization_msgs::msg::Marker msg;
+                msg.header.frame_id = this->frame_odom;
+                msg.header.stamp = this->get_clock()->now();
+                msg.action = visualization_msgs::msg::Marker::DELETEALL;
+                this->pub_pointcloud->publish(msg);
+                this->pub_keyframes->publish(msg);
+                this->pub_constraints->publish(msg);
+                this->pub_trajectory->publish(msg);
+                this->trajectory.points.clear();
             }
 
             ++image_id;
