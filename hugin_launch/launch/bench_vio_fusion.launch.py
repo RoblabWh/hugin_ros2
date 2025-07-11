@@ -9,6 +9,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("cameras", default_value="0,1,2,3"),
+            DeclareLaunchArgument("start_skip", default_value="20"),
         ]
         + cfg.bag_source
         + cfg.dm_vio_nodes

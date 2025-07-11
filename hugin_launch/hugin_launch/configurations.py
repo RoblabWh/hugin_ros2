@@ -49,6 +49,9 @@ calibration = DeclareLaunchArgument(
         [FindPackageShare("hugin_launch"), "config", "calibration.json"]
     ),
 )
+enable_image_info = DeclareLaunchArgument(
+    "use_image_info", default_value="true", description="Use image info messages"
+)
 
 ## TF2
 publish_tf = DeclareLaunchArgument(
@@ -197,6 +200,12 @@ dai_source = [
     cameras,
     cam_hz,
     imu_hz,
+    DeclareLaunchArgument(
+        "exposure",
+        default_value="0",
+        description="Exposure time in microseconds, 0 for auto exposure",
+    ),
+    enable_image_info,
     frame_imu,
 ]
 
@@ -216,11 +225,20 @@ dm_vio_nodes = [
     cameras,
     cam_hz,
     calibration,
+    DeclareLaunchArgument(
+        "projection",
+        default_value="0.2",
+        description="Output camera projection parameters",
+    ),
+    DeclareLaunchArgument(
+        "resolution",
+        default_value="512",
+        description="Output camera resolution",
+    ),
     DeclareLaunchArgument("mode", default_value="0", description="DM-VIO mode"),
     DeclareLaunchArgument(
         "preset",
-        # TODO maybe set to 1 for realtime
-        default_value="0",
+        default_value="1",
         description="DM-VIO preset",
     ),
     DeclareLaunchArgument("enable_imu", default_value="true", description="Enable IMU"),
@@ -260,13 +278,52 @@ dm_vio_nodes = [
     ),
     DeclareLaunchArgument(
         "imu_noise_factor",
-        default_value="160.0",
+        # default_value="160.0",
+        # default_value="320.0",
+        default_value="480.0",
+        # default_value="640.0",
         description="Factor to inflate IMU noise by",
     ),
     DeclareLaunchArgument(
         "imu_bias_factor",
-        default_value="500.0",
+        # default_value="500.0",
+        # default_value="1000.0",
+        default_value="1500.0",
+        # default_value="2000.0",
         description="Factor to inflate IMU bias by",
+    ),
+    DeclareLaunchArgument(
+        "pgba_skip_first_kfs",
+        default_value="1",
+        description="Skip first KFs in PGBA initialization",
+    ),
+    DeclareLaunchArgument(
+        "init_normalized_error_threshold",
+        # indoor
+        # default_value="0.2",
+        # #outdoor
+        default_value="1.0",
+        description="Normalized error threshold for coarse initialization to trigger full reset",
+    ),
+    DeclareLaunchArgument(
+        "max_time_between_init_frames",
+        default_value="0.5",
+        description="Maximum time between initialization frames in seconds",
+    ),
+    DeclareLaunchArgument(
+        "start_skip",
+        default_value="2",
+        description="Number of frames to skip at the start",
+    ),
+    DeclareLaunchArgument(
+        "candidate_points",
+        default_value="0",
+        description="Number of candidate points to use in DSO",
+    ),
+    DeclareLaunchArgument(
+        "active_points",
+        default_value="0",
+        description="Number of active points to use in DSO",
     ),
     frame_odom,
     frame_base,
@@ -277,17 +334,15 @@ dm_vio_nodes = [
         default_value="false",
         description="Trigger update of origin on initialization",
     ),
+    enable_image_info,
     DeclareLaunchArgument(
-        "use_image_info", default_value="true", description="Use image info messages"
-    ),
-    DeclareLaunchArgument(
-        "cov_lin",
-        default_value="0.001",
+        "covariance_linear",
+        default_value="0.1",
         description="Linear covariance for DM-VIO",
     ),
     DeclareLaunchArgument(
-        "cov_ang",
-        default_value="0.001",
+        "covariance_angular",
+        default_value="0.1",
         description="Angular covariance for DM-VIO",
     ),
 ] + tfs_base_imu

@@ -19,6 +19,16 @@ def integer_list(arg: str) -> list[int]:
     return [int(i) for i in arg.split(",")]
 
 
+def float_list(arg: str) -> list[float]:
+    """Convert a comma-separated string to a list of floats."""
+    return [float(i) for i in arg.split(",")]
+
+
+def string_list(arg: str) -> list[str]:
+    """Convert a comma-separated string to a list of strings."""
+    return [i.strip() for i in arg.split(",") if i.strip()]
+
+
 def radians(deg: float) -> float:
     """Convert degrees to radians."""
     return deg / 180 * pi

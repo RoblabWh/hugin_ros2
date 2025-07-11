@@ -11,7 +11,11 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("cameras", default_value="0,1"),
-            DeclareLaunchArgument("calibration", default_value=PathJoinSubstitution([FindPackageShare("hugin_launch"), "config", "calibration_tumvi.json"])),
+            DeclareLaunchArgument("calibration", default_value=PathJoinSubstitution([FindPackageShare("hugin_launch"), "config", "calibration_tumvi_kb4.json"])),
+            DeclareLaunchArgument("projection", default_value="0.2, 0.2, 0.499, 0.499"),
+            DeclareLaunchArgument("resolution", default_value="0"),
+            DeclareLaunchArgument("imu_noise_factor", default_value="160.0"),
+            DeclareLaunchArgument("imu_bias_factor", default_value="500.0"),
             DeclareLaunchArgument("use_image_info", default_value="false"),
             DeclareLaunchArgument("imu_tf_type", default_value="tumvi"),
         ]

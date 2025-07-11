@@ -5,7 +5,13 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 from launch_ros.substitutions import FindPackageShare
-from .utils import boolean, integer_list, ShutdownClean, ShutdownFailure
+from .utils import (
+    boolean,
+    integer_list,
+    float_list,
+    ShutdownClean,
+    ShutdownFailure,
+)
 from .configurations import log_level
 from os import mkdir
 
@@ -47,7 +53,11 @@ def dai_source(context) -> list[ComposableNode]:
                     ),
                     "cam_hz": int(LaunchConfiguration("cam_hz").perform(context)),
                     "imu_hz": int(LaunchConfiguration("imu_hz").perform(context)),
+                    "exposure": int(LaunchConfiguration("exposure").perform(context)),
                     "frame_imu": LaunchConfiguration("frame_imu").perform(context),
+                    "tumvi_exposure": not boolean(
+                        LaunchConfiguration("use_image_info").perform(context)
+                    ),
                 }
             ],
             extra_arguments=[{"use_intra_process_comms": True}],
@@ -95,6 +105,12 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                             context
                         ),
                         "camera_index": cam_id,
+                        "projection": float_list(
+                            LaunchConfiguration("projection").perform(context)
+                        ),
+                        "resolution": integer_list(
+                            LaunchConfiguration("resolution").perform(context)
+                        ),
                         # DM-VIO
                         "mode": int(LaunchConfiguration("mode").perform(context)),
                         "preset": int(LaunchConfiguration("preset").perform(context)),
@@ -129,8 +145,30 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "imu_bias_factor": float(
                             LaunchConfiguration("imu_bias_factor").perform(context)
                         ),
+                        "init_normalized_error_threshold": float(
+                            LaunchConfiguration(
+                                "init_normalized_error_threshold"
+                            ).perform(context)
+                        ),
+                        "max_time_between_init_frames": float(
+                            LaunchConfiguration("max_time_between_init_frames").perform(
+                                context
+                            )
+                        ),
+                        "pgba_skip_first_kfs": int(
+                            LaunchConfiguration("pgba_skip_first_kfs").perform(context)
+                        ),
                         "skip_delay_visual_only": int(
                             LaunchConfiguration("cam_hz").perform(context)
+                        ),
+                        "start_skip": int(
+                            LaunchConfiguration("start_skip").perform(context)
+                        ),
+                        "candidate_points": int(
+                            LaunchConfiguration("candidate_points").perform(context)
+                        ),
+                        "active_points": int(
+                            LaunchConfiguration("active_points").perform(context)
                         ),
                         "results_path": PathJoinSubstitution(
                             [results_base_path, f"cam{cam_id}"]
@@ -154,10 +192,10 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                             LaunchConfiguration("update_origin").perform(context)
                         ),
                         "covariance_linear": float(
-                            LaunchConfiguration("cov_lin").perform(context)
+                            LaunchConfiguration("covariance_linear").perform(context)
                         ),
                         "covariance_angular": float(
-                            LaunchConfiguration("cov_ang").perform(context)
+                            LaunchConfiguration("covariance_angular").perform(context)
                         ),
                     }
                 ],
@@ -260,7 +298,7 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
         # Fuse Relative Position
         ekf_inputs[f"{sensor_name}_config"] = [
             # Pos
-            True, True, True,
+            True, True, True, True, True, True,
             # Vel
             False, False, False, False, False, False,
             # Acc
@@ -361,6 +399,7 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
             parameters=[{"frame_odom": LaunchConfiguration("frame_odom")}],
             output="both",
         ),
+    ]
 
 
 def navsat_transform() -> list[LaunchDescriptionEntity]:
