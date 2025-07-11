@@ -164,6 +164,9 @@ namespace dmvio
         this->declare_parameter("pgba_skip_first_kfs", 1);
         this->declare_parameter("init_normalized_error_threshold", 1.0);
         this->declare_parameter("max_time_between_init_frames", 1.0);
+        this->declare_parameter("start_skip", 2);
+        this->declare_parameter("candidate_points", 0);
+        this->declare_parameter("active_points", 0);
 
         this->declare_parameter("frame_origin", "origin");
         this->declare_parameter("frame_odom", "odom");
@@ -195,6 +198,9 @@ namespace dmvio
         bool use_image_info = this->get_parameter("use_image_info").as_bool();
         double imu_noise_factor = this->get_parameter("imu_noise_factor").as_double();
         double imu_bias_factor = this->get_parameter("imu_bias_factor").as_double();
+        int candidate_points = this->get_parameter("candidate_points").as_int();
+        int active_points = this->get_parameter("active_points").as_int();
+        this->start = this->get_parameter("start_skip").as_int();
         this->imuSettings.resultsPrefix = std::filesystem::path(this->get_parameter("results_path").as_string()).string() + '/';
         this->imuSettings.initSettings.pgbaSettings.skipFirstKFs = this->get_parameter("pgba_skip_first_kfs").as_int();
         this->imuSettings.initSettings.coarseInitSettings.requestFullResetNormalizedErrorThreshold = this->get_parameter("init_normalized_error_threshold").as_double();
@@ -261,6 +267,16 @@ namespace dmvio
         }
 
         this->mainSettings.settingsDefault(preset);
+        if (candidate_points > 0)
+        {
+            this->dsoSettings.desiredImmatureDensity = candidate_points;
+            RCLCPP_INFO(get_logger(), "Set candidate points to %d", candidate_points);
+        }
+        if (active_points > 0)
+        {
+            this->dsoSettings.desiredPointDensity = active_points;
+            RCLCPP_INFO(get_logger(), "Set active points to %d", active_points);
+        }
 
         if (quiet)
         {
