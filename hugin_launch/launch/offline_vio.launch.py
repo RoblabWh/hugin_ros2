@@ -14,5 +14,5 @@ def generate_launch_description():
                     "vio_container", gen.bag_source(context) + gen.dm_vio_nodes(context)
                 )
             )
-        ]
+        ] + gen.reset_rviz()
     )

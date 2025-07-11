@@ -5,6 +5,7 @@ from rosgraph_msgs.msg import Clock
 from asyncio import Future
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from std_msgs.msg import Header
+from std_srvs.srv import Empty
 
 
 class WaitForBagEnd(rclpy.node.Node):
@@ -87,6 +88,20 @@ def reset_kalman_origin():
     )
     try:
         rclpy.spin(node)
+        node.destroy_node()
+        rclpy.shutdown()
+    except KeyboardInterrupt:
+        pass
+
+
+def reset_rviz():
+    rclpy.init()
+    node = rclpy.create_node("reset_rviz")
+    client = node.create_client(Empty, "/rviz/reset_time")
+    try:
+        if client.wait_for_service(timeout_sec=5.0):
+            future = client.call_async(Empty.Request())
+            rclpy.spin_until_future_complete(node, future)
         node.destroy_node()
         rclpy.shutdown()
     except KeyboardInterrupt:

@@ -478,3 +478,14 @@ def gt_trigger_dummy() -> list[LaunchDescriptionEntity]:
             output="both",
         )
     ]
+
+
+def reset_rviz() -> list[LaunchDescriptionEntity]:
+    return [
+        Node(
+            package="hugin_launch",
+            executable="reset_rviz",
+            name="reset_rviz",
+            output="both",
+        )
+    ]

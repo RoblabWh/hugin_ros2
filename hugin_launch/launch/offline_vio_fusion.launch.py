@@ -17,5 +17,5 @@ def generate_launch_description():
                 )
                 + gen.kalman_filter(context)
             )
-        ]
+        ] + gen.reset_rviz()
     )
