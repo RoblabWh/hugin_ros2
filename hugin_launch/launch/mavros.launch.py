@@ -8,8 +8,6 @@ import hugin_launch.configurations as cfg
 def generate_launch_description():
     return LaunchDescription(
         cfg.mavros
-        + cfg.tf_base_fcu
-        + cfg.tf_base_gps
         + [
             cfg.log_level,
             Node(

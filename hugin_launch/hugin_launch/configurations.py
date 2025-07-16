@@ -84,6 +84,8 @@ tfs_base_imu = [
     DeclareLaunchArgument(
         "imu_tf_type", default_value="hugin", description="IMU TF type"
     ),
+    frame_base,
+    frame_imu,
     Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -149,6 +151,8 @@ tfs_base_imu = [
 ]
 
 tf_base_fcu = [
+    frame_base,
+    frame_fcu,
     Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -171,10 +175,12 @@ tf_base_fcu = [
             LaunchConfiguration("frame_fcu"),
         ],
         output="screen",
-    )
+    ),
 ]
 
 tf_base_gps = [
+    frame_base,
+    frame_gps,
     Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -189,7 +195,7 @@ tf_base_gps = [
             LaunchConfiguration("frame_gps"),
         ],
         output="screen",
-    )
+    ),
 ]
 
 ######################
@@ -367,7 +373,9 @@ kalman_filter = [
     cameras,
     frame_odom,
     frame_base,
-]
+] + tf_base_fcu
+
+navsat_transform = [] + tf_base_gps
 
 mavros = [
     DeclareLaunchArgument(

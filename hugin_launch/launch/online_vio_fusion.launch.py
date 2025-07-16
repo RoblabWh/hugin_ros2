@@ -9,6 +9,8 @@ def generate_launch_description():
         cfg.dai_source
         + cfg.dm_vio_nodes
         + cfg.kalman_filter
+        + cfg.mavros
+        + gen.mavros()
         + [
             OpaqueFunction(
                 function=lambda context: gen.compose(
