@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'wait_for_bag_end = hugin_launch.helper:wait_for_bag_end',
             'dummy_publisher = hugin_launch.helper:dummy_publisher',
+            'gt_trigger = hugin_launch.helper:gt_trigger',
             'reset_kalman_origin = hugin_launch.helper:reset_kalman_origin',
             'reset_rviz = hugin_launch.helper:reset_rviz',
         ],

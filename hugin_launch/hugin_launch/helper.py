@@ -1,6 +1,7 @@
 import rclpy
 import rclpy.node
 import rclpy.qos
+import rclpy.utilities
 from rosgraph_msgs.msg import Clock
 from asyncio import Future
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -61,6 +62,21 @@ def dummy_publisher():
         rclpy.shutdown()
     except KeyboardInterrupt:
         pass
+
+
+def gt_trigger():
+    rclpy.init()
+    node = rclpy.create_node("gt_trigger")
+    args = rclpy.utilities.remove_ros_args()
+    pub = node.create_publisher(
+        Header, "/gt/trigger", rclpy.qos.qos_profile_services_default
+    )
+    msg = Header()
+    msg.stamp = node.get_clock().now().to_msg()
+    msg.frame_id = args[1] if len(args) > 1 else "trigger"
+    pub.publish(msg)
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 def reset_kalman_origin():
