@@ -118,7 +118,7 @@ namespace dmvio
 
     void ROS2Wrapper::reset_system()
     {
-        this->fullSystem = std::make_unique<dso::FullSystem>(false, this->imuCalibration, this->imuSettings, &(this->dsoSettings));
+        this->fullSystem = std::make_unique<dso::FullSystem>(this->mainSettings.playbackSpeed == 0, this->imuCalibration, this->imuSettings, &(this->dsoSettings));
 
         if (this->dsoSettings.photometricCalibration > 0 && this->undistorter->photometricUndist == nullptr)
         {
@@ -132,6 +132,12 @@ namespace dmvio
         }
 
         this->frameSkipping->reset();
+
+        for (auto &keyframe : this->keyframes)
+            delete keyframe;
+        this->keyframes.clear();
+        this->keyframesByKFID.clear();
+        this->connections.clear();
 
         this->fullSystem->outputWrapper.push_back(this->frameSkipping.get());
         this->fullSystem->outputWrapper.push_back(this);
