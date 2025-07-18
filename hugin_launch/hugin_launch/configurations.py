@@ -29,7 +29,7 @@ use_sim_time = DeclareLaunchArgument(
 ## Sensors
 cameras = DeclareLaunchArgument(
     "cameras",
-    default_value="0",
+    default_value="0,1,2,3",
     description="Comma separated list of camera ids",
 )
 cam_hz = DeclareLaunchArgument(
@@ -47,6 +47,7 @@ calibration = DeclareLaunchArgument(
     description="Path to basalt calibration.json",
     default_value=PathJoinSubstitution(
         [FindPackageShare("hugin_launch"), "config", "calibration.json"]
+        # [FindPackageShare("hugin_launch"), "config", "calibration_imu_base.json"]
     ),
 )
 enable_image_info = DeclareLaunchArgument(
@@ -244,7 +245,10 @@ dm_vio_nodes = [
     DeclareLaunchArgument("mode", default_value="0", description="DM-VIO mode"),
     DeclareLaunchArgument(
         "preset",
-        default_value="1",
+        # Single threaded IMU Initialization
+        default_value="0",
+        # Multi threaded IMU Initialization (race condition on reset)
+        # default_value="1",
         description="DM-VIO preset",
     ),
     DeclareLaunchArgument("enable_imu", default_value="true", description="Enable IMU"),
@@ -344,6 +348,10 @@ dm_vio_nodes = [
     DeclareLaunchArgument(
         "covariance_linear",
         default_value="0.1",
+        # default_value="0.2",
+        # default_value="0.5",
+        # default_value="1.0",
+        # default_value="10.0",
         description="Linear covariance for DM-VIO",
     ),
     DeclareLaunchArgument(
