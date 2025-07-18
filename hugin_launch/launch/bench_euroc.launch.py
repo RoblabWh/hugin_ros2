@@ -11,9 +11,11 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("cameras", default_value="0,1"),
-            DeclareLaunchArgument("calibration", default_value=PathJoinSubstitution([FindPackageShare("hugin_launch"), "config", "calibration_euroc.json"])),
+            DeclareLaunchArgument("calibration", default_value=PathJoinSubstitution([FindPackageShare("hugin_launch"), "config", "calibration_euroc_radtan8.json"])),
             DeclareLaunchArgument("projection", default_value="-1"),
             DeclareLaunchArgument("resolution", default_value="0"),
+            DeclareLaunchArgument("imu_noise_factor", default_value="100.0"),
+            DeclareLaunchArgument("imu_bias_factor", default_value="1.0"),
             DeclareLaunchArgument("mode", default_value="3"),
             DeclareLaunchArgument("enable_exposure", default_value="false"),
             DeclareLaunchArgument("imu_tf_type", default_value="euroc"),
