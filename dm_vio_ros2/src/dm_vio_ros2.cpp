@@ -921,49 +921,60 @@ namespace dmvio
     {
         size_t image_id = 0;
 
-        while (!this->stopSystem)
+        try
         {
-            // Skip the first few frames if the start variable is set.
-            if (this->start > 0 && image_id < this->start)
+            while (!this->stopSystem)
             {
-                auto pair = this->frameContainer.getImageAndIMUData(0);
+                // Skip the first few frames if the start variable is set.
+                if (this->start > 0 && image_id < this->start)
+                {
+                    auto pair = this->frameContainer.getImageAndIMUData(0);
+                    ++image_id;
+                    continue;
+                }
+
+                const int numSkipFrames = this->frameSkipping->getMaxSkipFrames(this->frameContainer.getQueueSize());
+                auto pair = this->frameContainer.getImageAndIMUData(numSkipFrames);
+
+                if (!pair.first)
+                    continue;
+
+                this->fullSystem->addActiveFrame(pair.first.get(), image_id, &(pair.second), nullptr);
+
+                if (this->fullSystem->initFailed)
+                    RCLCPP_INFO(get_logger(), "Init Failed!");
+                if (this->fullSystem->isLost)
+                    RCLCPP_INFO(get_logger(), "Lost!");
+
+                if (this->fullSystem->initFailed || this->fullSystem->isLost || this->dsoSettings.fullResetRequested)
+                {
+                    RCLCPP_INFO(get_logger(), "RESETTING!");
+                    this->reset_system();
+                    this->dsoSettings.fullResetRequested = false;
+
+                    visualization_msgs::msg::Marker msg;
+                    msg.header.frame_id = this->frame_odom;
+                    msg.header.stamp = this->get_clock()->now();
+                    msg.action = visualization_msgs::msg::Marker::DELETEALL;
+                    this->pub_pointcloud->publish(msg);
+                    this->pub_keyframes->publish(msg);
+                    this->pub_constraints->publish(msg);
+                    this->pub_trajectory->publish(msg);
+                    this->trajectory.points.clear();
+                }
+
                 ++image_id;
-                continue;
             }
-
-            const int numSkipFrames = this->frameSkipping->getMaxSkipFrames(this->frameContainer.getQueueSize());
-            auto pair = this->frameContainer.getImageAndIMUData(numSkipFrames);
-
-            if (!pair.first)
-                continue;
-
-            this->fullSystem->addActiveFrame(pair.first.get(), image_id, &(pair.second), nullptr);
-
-            if (this->fullSystem->initFailed)
-                RCLCPP_INFO(get_logger(), "Init Failed!");
-            if (this->fullSystem->isLost)
-                RCLCPP_INFO(get_logger(), "Lost!");
-
-            if (this->fullSystem->initFailed || this->fullSystem->isLost || this->dsoSettings.fullResetRequested)
-            {
-                RCLCPP_INFO(get_logger(), "RESETTING!");
-                this->reset_system();
-                this->dsoSettings.fullResetRequested = false;
-
-                visualization_msgs::msg::Marker msg;
-                msg.header.frame_id = this->frame_odom;
-                msg.header.stamp = this->get_clock()->now();
-                msg.action = visualization_msgs::msg::Marker::DELETEALL;
-                this->pub_pointcloud->publish(msg);
-                this->pub_keyframes->publish(msg);
-                this->pub_constraints->publish(msg);
-                this->pub_trajectory->publish(msg);
-                this->trajectory.points.clear();
-            }
-
-            ++image_id;
         }
-
+        catch (const std::exception &e)
+        {
+            RCLCPP_ERROR(get_logger(), "Exception in run loop: %s", e.what());
+            // Explicitly stop subscriptions to avoid leaking memory
+            this->sub_imu.reset();
+            this->sub_img.reset();
+            this->sub_image.unsubscribe();
+            this->sub_image_info.unsubscribe();
+        }
         this->fullSystem->blockUntilMappingIsFinished();
 
         this->fullSystem->printResult(this->imuSettings.resultsPrefix + "result.txt", false, false, true);
