@@ -359,6 +359,16 @@ dm_vio_nodes = [
         default_value="0.1",
         description="Angular covariance for DM-VIO",
     ),
+    DeclareLaunchArgument(
+        "covariance_linear_scaling",
+        default_value="0.0",
+        description="Linear covariance scaling factor for DM-VIO",
+    ),
+    DeclareLaunchArgument(
+        "covariance_angular_scaling",
+        default_value="0.0",
+        description="Angular covariance scaling factor for DM-VIO",
+    ),
 ] + tfs_base_imu
 
 _data_recorder = [

@@ -197,6 +197,16 @@ def dm_vio_nodes(context) -> list[ComposableNode]:
                         "covariance_angular": float(
                             LaunchConfiguration("covariance_angular").perform(context)
                         ),
+                        "covariance_linear_scaling": float(
+                            LaunchConfiguration("covariance_linear_scaling").perform(
+                                context
+                            )
+                        ),
+                        "covariance_angular_scaling": float(
+                            LaunchConfiguration("covariance_angular_scaling").perform(
+                                context
+                            )
+                        ),
                     }
                 ],
                 remappings=[
