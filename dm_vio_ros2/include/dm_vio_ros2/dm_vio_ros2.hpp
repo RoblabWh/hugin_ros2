@@ -129,6 +129,7 @@ namespace dmvio
         std::string frame_origin, frame_odom, frame_base, frame_imu, frame_camera;
         bool publish_tf, update_origin, reset_origin = false;
         double covariance_linear, covariance_angular;
+        double covariance_linear_scaling, covariance_angular_scaling;
 
         visualization_msgs::msg::Marker trajectory;
 
@@ -140,7 +141,7 @@ namespace dmvio
         std::unique_ptr<dmvio::TransformDSOToIMU> transformDSOToIMU;
         bool scaleAvailable = false; // True if transformDSOToIMU contains a valid scale.
         std::atomic<dmvio::SystemStatus> lastSystemStatus;
-        double lastTimestamp = 0.0;
+        double lastTimestamp = 0.0, initTimestamp = 0.0;
         Sophus::SE3d lastCamToWorld;
 
         dmvio::FrameContainer frameContainer;

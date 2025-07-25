@@ -184,6 +184,8 @@ namespace dmvio
 
         this->declare_parameter("covariance_linear", 0.001);
         this->declare_parameter("covariance_angular", 0.001);
+        this->declare_parameter("covariance_linear_scaling", 0.0);
+        this->declare_parameter("covariance_angular_scaling", 0.0);
 
         // get params
         std::string calib_path = this->get_parameter("calibration").as_string();
@@ -227,6 +229,8 @@ namespace dmvio
 
         this->covariance_linear = this->get_parameter("covariance_linear").as_double();
         this->covariance_angular = this->get_parameter("covariance_angular").as_double();
+        this->covariance_linear_scaling = this->get_parameter("covariance_linear_scaling").as_double();
+        this->covariance_angular_scaling = this->get_parameter("covariance_angular_scaling").as_double();
 
         if (calib_path.empty())
             throw std::invalid_argument("Calibration path not set!");
@@ -516,6 +520,8 @@ namespace dmvio
                 setTransform2FromSE3(imuToWorld.inverse(), tf2_imu_odom);
                 tf2::Transform tf2_odom_base = (tf2_imu_base * tf2_imu_odom).inverse();
 
+                if (this->initTimestamp == 0)
+                    this->initTimestamp = frame->timestamp;
                 if (this->lastTimestamp > 0)
                 {
                     // Publish odometry
@@ -544,8 +550,11 @@ namespace dmvio
                     odomMsg->twist.twist.angular.z = angVel.z();
 
                     // Set covariance matrices
-                    setCovarianceMatrixFromValues(this->covariance_linear, this->covariance_angular, odomMsg->pose.covariance);
-                    setCovarianceMatrixFromValues(this->covariance_linear, this->covariance_angular, odomMsg->twist.covariance);
+                    const auto relativeTimestamp = frame->timestamp - this->initTimestamp;
+                    const auto covarLinScaled = this->covariance_linear * (1.0 + relativeTimestamp * this->covariance_linear_scaling);
+                    const auto covarAngScaled = this->covariance_angular * (1.0 + relativeTimestamp * this->covariance_angular_scaling);
+                    setCovarianceMatrixFromValues(covarLinScaled, covarAngScaled, odomMsg->pose.covariance);
+                    setCovarianceMatrixFromValues(covarLinScaled, covarAngScaled, odomMsg->twist.covariance);
                     // setCovarianceMatrixFromVectors(linDelta * this->covariance_linear, angDelta * this->covariance_angular, odomMsg->pose.covariance);
                     // setCovarianceMatrixFromVectors(linDelta * this->covariance_linear, angDelta * this->covariance_angular, odomMsg->twist.covariance);
                     // setCovarianceMatrixFromTwist(odomMsg->twist.twist, this->covariance_linear, this->covariance_angular, odomMsg->pose.covariance);
