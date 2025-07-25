@@ -38,5 +38,6 @@ def generate_launch_description():
                 )
             ),
         ]
+        + gen.reset_rviz()
         + gen.shutdown_on_bag_end()
     )
