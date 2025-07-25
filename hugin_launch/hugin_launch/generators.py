@@ -290,48 +290,66 @@ def odometry_recorder(context) -> list[ComposableNode]:
 
 
 def kalman_filter(context) -> list[LaunchDescriptionEntity]:
+    FILTER_TYPES = ["ekf", "ukf"]
+    filter_type = LaunchConfiguration("kalman_filter_type").perform(context)
+    if filter_type not in FILTER_TYPES:
+        raise ValueError(
+            f"Invalid kalman filter type: {filter_type}. Expected one of {FILTER_TYPES}."
+        )
+
+    FILTER_MODES = ["relative", "velocity"]
+    filter_mode = LaunchConfiguration("kalman_filter_mode").perform(context)
+    if filter_mode not in FILTER_MODES:
+        raise ValueError(
+            f"Invalid kalman filter mode: {filter_mode}. Expected one of {FILTER_MODES}."
+        )
+
+    cam_hz = float(LaunchConfiguration("cam_hz").perform(context))
     cam_ids = integer_list(LaunchConfiguration("cameras").perform(context))
     ekf_inputs = {}
     for i, cam_id in enumerate(cam_ids):
         sensor_name = f"odom{i}"
         sensor_topic = f"cam{cam_id}/odometry"
         ekf_inputs[sensor_name] = sensor_topic
-        # Fuse Velocities
-        # ekf_inputs[f"{sensor_name}_config"] = [
-        #     # Pos
-        #     False, False, False, False, False, False,
-        #     # Vel
-        #     True, True, True, True, True, True,
-        #     # Acc
-        #     False, False, False, False, False, False,
-        # ]
-        # Fuse Relative Position
-        ekf_inputs[f"{sensor_name}_config"] = [
-            # Pos
-            True, True, True, True, True, True,
-            # Vel
-            False, False, False, False, False, False,
-            # Acc
-            False, False, False, False, False, False,
-        ]
-        ekf_inputs[f"{sensor_name}_relative"] = True
-        # TODO: Tune Rejection Threshold
-        # ekf_inputs[f"{sensor_name}_pose_rejection_threshold"] = 100.0
+        if filter_mode == "velocity":
+            # Fuse Velocities
+            ekf_inputs[f"{sensor_name}_config"] = [
+                # Pos
+                False, False, False, False, False, False,
+                # Vel
+                True, True, True, True, True, True,
+                # Acc
+                False, False, False, False, False, False,
+            ]
+            ekf_inputs[f"{sensor_name}_twist_rejection_threshold"] = 5.0
+        elif filter_mode == "relative":
+            # Fuse Relative Position
+            ekf_inputs[f"{sensor_name}_config"] = [
+                # Pos
+                True, True, True, True, True, True,
+                # Vel
+                False, False, False, False, False, False,
+                # Acc
+                False, False, False, False, False, False,
+            ]
+            ekf_inputs[f"{sensor_name}_relative"] = True
+            ekf_inputs[f"{sensor_name}_pose_rejection_threshold"] = 50.0
     return [
         log_level,
         Node(
             package="robot_localization",
-            executable="ekf_node",
+            executable=f"{filter_type}_node",
             name="kalman_filter",
             parameters=[
                 {
-                    "frequency": 20.0,
-                    "sensor_timeout": 0.5,
-                    # TODO for debugging
-                    # "print_diagnostics": True,
-                    # "debug": True,
+                    "frequency": cam_hz,
+                    "sensor_timeout": 10 / cam_hz,
                     "smooth_lagged_data": True,
-                    "history_length": 5.0,
+                    "history_length": 10 * float(
+                        LaunchConfiguration("max_time_between_init_frames").perform(
+                            context
+                        )
+                    ),
                     "use_sim_time": boolean(
                         LaunchConfiguration("use_sim_time").perform(context)
                     ),

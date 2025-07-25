@@ -53,6 +53,11 @@ calibration = DeclareLaunchArgument(
 enable_image_info = DeclareLaunchArgument(
     "use_image_info", default_value="true", description="Use image info messages"
 )
+max_init_time = DeclareLaunchArgument(
+    "max_time_between_init_frames",
+    default_value="0.5",
+    description="Maximum time between initialization frames in seconds",
+)
 
 ## TF2
 publish_tf = DeclareLaunchArgument(
@@ -315,11 +320,7 @@ dm_vio_nodes = [
         default_value="1.0",
         description="Normalized error threshold for coarse initialization to trigger full reset",
     ),
-    DeclareLaunchArgument(
-        "max_time_between_init_frames",
-        default_value="0.5",
-        description="Maximum time between initialization frames in seconds",
-    ),
+    max_init_time,
     DeclareLaunchArgument(
         "start_skip",
         default_value="2",
@@ -387,8 +388,20 @@ sensor_recorder = _data_recorder + [cameras]
 odometry_recorder = _data_recorder + [cameras]
 
 kalman_filter = [
+    DeclareLaunchArgument(
+        "kalman_filter_type",
+        default_value="ekf",
+        description="Type of Kalman filter to use",
+    ),
+    DeclareLaunchArgument(
+        "kalman_filter_mode",
+        default_value="relative",
+        description="Mode of Kalman filter to use",
+    ),
     use_sim_time,
     cameras,
+    cam_hz,
+    max_init_time,
     frame_odom,
     frame_base,
 ] + tf_base_fcu
