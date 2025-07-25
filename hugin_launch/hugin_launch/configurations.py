@@ -349,10 +349,6 @@ dm_vio_nodes = [
     DeclareLaunchArgument(
         "covariance_linear",
         default_value="0.1",
-        # default_value="0.2",
-        # default_value="0.5",
-        # default_value="1.0",
-        # default_value="10.0",
         description="Linear covariance for DM-VIO",
     ),
     DeclareLaunchArgument(
@@ -362,12 +358,12 @@ dm_vio_nodes = [
     ),
     DeclareLaunchArgument(
         "covariance_linear_scaling",
-        default_value="0.0",
+        default_value="0.2",
         description="Linear covariance scaling factor for DM-VIO",
     ),
     DeclareLaunchArgument(
         "covariance_angular_scaling",
-        default_value="0.0",
+        default_value="0.01",
         description="Angular covariance scaling factor for DM-VIO",
     ),
 ] + tfs_base_imu

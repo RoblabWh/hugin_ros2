@@ -361,58 +361,70 @@ def kalman_filter(context) -> list[LaunchDescriptionEntity]:
                         context
                     ),
                 },
-                {
-                    "imu0": "/mavros/imu/data_raw",
-                    # "imu0": "/mavros/imu/data_corrected",
-                    "imu0_config": [
-                        # Pos
-                        False, False, False, False, False, False,
-                        # Vel
-                        False, False, False, True, True, True,
-                        # Acc
-                        True, True, True, False, False, False,
-                    ],
-                    "imu0_queue_size": 20,
-                    # NOTE has to guess orientation from filter state
-                    "imu0_remove_gravitational_acceleration": True,
-                },
-                # {
-                #     # TODO: Tune covariances
-                #     "dynamics_process_noise_covariance": True,
-                #     "process_noise_covariance": [
-                #         # NOTE: Default values from robot_localization for reference
-                #         # # Pos
-                #         # 0.05, 0.05, 0.06, 0.03, 0.03, 0.06,
-                #         # # Vel
-                #         # 0.025, 0.025, 0.04, 0.01, 0.01, 0.02,
-                #         # # Acc
-                #         # 0.01, 0.01, 0.015,
-                #         # NOTE: Own tuned values
-                #         # Pos
-                #         5e-12, 5e-12, 6e-12, 3e-12, 3e-12, 6e-12,
-                #         # Vel
-                #         0.025, 0.025, 0.04, 0.01, 0.01, 0.02,
-                #         # Acc
-                #         0.01, 0.01, 0.015,
-                #     ],
-                #     "initial_estimate_covariance": [
-                #         # NOTE: Default values from robot_localization for reference
-                #         # # Pos
-                #         # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
-                #         # # Vel
-                #         # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
-                #         # # Acc
-                #         # 1e-9, 1e-9, 1e-9,
-                #         # NOTE: Own tuned values
-                #         # Pos
-                #         1e-15, 1e-15, 1e-15, 1e-15, 1e-15, 1e-15,
-                #         # Vel
-                #         1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
-                #         # Acc
-                #         1e-9, 1e-9, 1e-9,
-                #     ],
-                # },
                 ekf_inputs,
+                # {
+                #     "imu0": "/mavros/imu/data_raw",
+                #     "imu0_config": [
+                #         # Pos
+                #         False, False, False, False, False, False,
+                #         # Vel
+                #         False, False, False, True, True, True,
+                #         # Acc
+                #         True, True, True, False, False, False,
+                #     ],
+                #     "imu0_queue_size": 200,
+                #     # NOTE has to guess orientation from filter state
+                #     "imu0_remove_gravitational_acceleration": True,
+                # },
+                # {
+                #     "imu1": "/imu/data_raw",
+                #     "imu1_config": [
+                #         # Pos
+                #         False, False, False, False, False, False,
+                #         # Vel
+                #         False, False, False, True, True, True,
+                #         # Acc
+                #         True, True, True, False, False, False,
+                #     ],
+                #     "imu1_queue_size": 200,
+                #     # NOTE has to guess orientation from filter state
+                #     "imu1_remove_gravitational_acceleration": True,
+                # },
+                {
+                    "dynamics_process_noise_covariance": True,
+                    "process_noise_covariance": [
+                        # NOTE: Default values from robot_localization for reference
+                        # # Pos
+                        # 0.05, 0.05, 0.06, 0.03, 0.03, 0.06,
+                        # # Vel
+                        # 0.025, 0.025, 0.04, 0.01, 0.01, 0.02,
+                        # # Acc
+                        # 0.01, 0.01, 0.015,
+                        # NOTE: Own tuned values
+                        # Pos
+                        0.5, 0.5, 0.5, 0.3, 0.3, 0.3,
+                        # Vel
+                        0.25, 0.25, 0.25, 0.1, 0.1, 0.1,
+                        # Acc
+                        0.1, 0.1, 0.1,
+                    ],
+                    "initial_estimate_covariance": [
+                        # NOTE: Default values from robot_localization for reference
+                        # # Pos
+                        # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
+                        # # Vel
+                        # 1e-9, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9,
+                        # # Acc
+                        # 1e-9, 1e-9, 1e-9,
+                        # NOTE: Own tuned values
+                        # Pos
+                        1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6,
+                        # Vel
+                        1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6,
+                        # Acc
+                        1e-6, 1e-6, 1e-6,
+                    ],
+                },
             ],
             remappings=[
                 ("odometry/filtered", "odometry"),
