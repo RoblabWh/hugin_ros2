@@ -250,10 +250,7 @@ dm_vio_nodes = [
     DeclareLaunchArgument("mode", default_value="0", description="DM-VIO mode"),
     DeclareLaunchArgument(
         "preset",
-        # Single threaded IMU Initialization
-        default_value="0",
-        # Multi threaded IMU Initialization (race condition on reset)
-        # default_value="1",
+        default_value="1",
         description="DM-VIO preset",
     ),
     DeclareLaunchArgument("enable_imu", default_value="true", description="Enable IMU"),
