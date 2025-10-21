@@ -7,3 +7,6 @@
 [submodule "robot_localization"]
 	path = robot_localization
 	url = git@github.com:RoblabWh/robot_localization.git
+[submodule "virtcam/thirdparty/PanoWeave"]
+	path = virtcam/thirdparty/PanoWeave
+	url = git@github.com:RoblabWh/PanoWeave.git
