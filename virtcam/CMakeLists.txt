@@ -15,12 +15,13 @@ find_package(image_info_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
+find_package(message_filters REQUIRED)
 
 find_package(Eigen3 REQUIRED)
 add_subdirectory(thirdparty/PanoWeave)
 
 # build component
-add_library(${PROJECT_NAME} SHARED src/perspective.cpp)
+add_library(${PROJECT_NAME} SHARED src/perspective.cpp src/spherical.cpp)
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -36,6 +37,7 @@ ament_target_dependencies(
   "tf2"
   "tf2_ros"
   "tf2_eigen"
+  "message_filters"
 )
 target_link_libraries(
   ${PROJECT_NAME}
@@ -45,6 +47,7 @@ target_link_libraries(
 
 # generate nodes
 rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "virtcam::PerspectiveCamera" EXECUTABLE perspective_camera_node EXECUTOR SingleThreadedExecutor)
+rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "virtcam::SphericalCamera" EXECUTABLE spherical_camera_node EXECUTOR SingleThreadedExecutor)
 
 install(
   TARGETS ${PROJECT_NAME}
