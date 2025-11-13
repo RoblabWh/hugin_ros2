@@ -28,6 +28,8 @@ SphericalCamera::SphericalCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("input.calibration", "");
   this->declare_parameter("input.depth", 1.0);
   this->declare_parameter("input.depth_topic", "");
+  this->declare_parameter("input.vignette_threshold", 0.5);
+  this->declare_parameter("input.use_mask_as_vignette", false);
 
   this->declare_parameter("output.res_x", 0);
   this->declare_parameter("output.res_y", 720);
@@ -142,6 +144,13 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
         depth_missing++;
       }
       depth_set++;
+    } else if (param.get_name() == "input.vignette_threshold") {
+      const auto vt = param.as_double();
+      if (vt < 0.0 || vt > 1.0) {
+        result.successful = false;
+        result.reason = "Vignette threshold must be in [0, 1] ";
+        return result;
+      }
     } else if (param.get_name() == "output.position") {
       const auto pos = param.as_double_array();
       if (pos.size() != 3) {
@@ -238,6 +247,10 @@ void SphericalCamera::post_set_param_callback(
               this->stitcher.setDepth(cvb->image);
             });
       }
+    } else if (param.get_name() == "input.vignette_threshold") {
+      this->stitcher.vignetteThreshold(param.as_double());
+    } else if (param.get_name() == "input.use_mask_as_vignette") {
+      this->stitcher.useMaskAsVignette(param.as_bool());
     } else if (param.get_name() == "output.res_x" ||
                param.get_name() == "output.res_y" ||
                param.get_name() == "output.fov_x" ||
