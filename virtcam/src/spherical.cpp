@@ -56,10 +56,18 @@ SphericalCamera::SphericalCamera(const rclcpp::NodeOptions &options)
 void SphericalCamera::image_callback(
     const std::vector<sensor_msgs::msg::Image::ConstSharedPtr> &msgs) {
   std::vector<cv::Mat> imgs;
+  std::vector<float> expos;
   imgs.reserve(msgs.size());
+  expos.reserve(msgs.size());
   for (const auto &msg : msgs) {
     auto cvb = cv_bridge::toCvShare(msg);
     imgs.push_back(cvb->image);
+    try {
+      expos.emplace_back(std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::nanoseconds(std::stoul(msg->header.frame_id))).count());
+    } catch (std::exception const& ex) {
+      RCLCPP_WARN_ONCE(this->get_logger(), "Unable to read exposure time from frame_id, with error \"%s\", no exposure compensation will be applied.", ex.what());
+      expos.emplace_back(1.0f);
+    }
   }
 
   auto out_msg = std::make_unique<sensor_msgs::msg::Image>();
@@ -72,7 +80,7 @@ void SphericalCamera::image_callback(
   out_msg->data.resize(out_msg->step * out_msg->height);
   cv::Mat out_cv(out_msg->height, out_msg->width, imgs.front().type(),
                  out_msg->data.data());
-  this->stitcher.stitch(imgs, out_cv);
+  this->stitcher.stitch(imgs, expos, out_cv);
 
   this->pub->publish(std::move(out_msg));
 }
