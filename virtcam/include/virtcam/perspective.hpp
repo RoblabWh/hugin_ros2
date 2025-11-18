@@ -15,12 +15,10 @@ public:
   PerspectiveCamera(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
 private:
-  std::string frame_id, frame_base, frame_imu;
-  std::size_t in_idx;
+  bool initialized;
   basalt::Calibration<float> in_calib;
   basalt::GenericCamera<float> out_intr;
   Sophus::SE3<float> out_extr;
-  bool initialized;
   cv::UMat map, vign;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub;

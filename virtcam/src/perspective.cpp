@@ -18,7 +18,6 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->on_set_param_callback_handle =
       this->add_on_set_parameters_callback(std::bind(
           &PerspectiveCamera::on_set_param_callback, this, std::placeholders::_1));
-
   this->post_set_param_callback_handle = this->add_post_set_parameters_callback(
       std::bind(&PerspectiveCamera::post_set_param_callback, this,
                 std::placeholders::_1));
@@ -26,6 +25,7 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->initialized = false;
   this->declare_parameter("input.calibration", "");
   this->declare_parameter("input.index", 0);
+  this->declare_parameter("input.depth", 1.0);
 
   this->declare_parameter("output.type", "pinhole");
   this->declare_parameter("output.res_x", 1280);
@@ -64,7 +64,7 @@ void PerspectiveCamera::image_callback(
   auto in_cvb = cv_bridge::toCvShare(in_msg);
 
   auto out_msg = std::make_unique<sensor_msgs::msg::Image>();
-  out_msg->header.frame_id = this->frame_id;
+  out_msg->header.frame_id = this->get_parameter("output.frame_id").as_string();
   out_msg->header.stamp = in_msg->header.stamp;
   out_msg->encoding = in_msg->encoding;
   out_msg->height = this->map.rows;
@@ -205,7 +205,8 @@ void PerspectiveCamera::post_set_param_callback(
       cereal::JSONInputArchive archive(file);
       archive(this->in_calib);
       build_map = true;
-    } else if (param.get_name() == "input.index") {
+    } else if (param.get_name() == "input.index" ||
+               param.get_name() == "input.depth") {
       build_map = true;
     } else if (param.get_name() == "output.attach_to" ||
                param.get_name() == "output.attach_offset" ||
@@ -224,12 +225,6 @@ void PerspectiveCamera::post_set_param_callback(
                param.get_name() == "output.fov_y" ||
                param.get_name() == "output.intrinsics") {
       build_intr = true;
-    } else if (param.get_name() == "output.frame_id") {
-      this->frame_id = param.as_string();
-    } else if (param.get_name() == "frame.base") {
-      this->frame_base = param.as_string();
-    } else if (param.get_name() == "frame.imu") {
-      this->frame_imu = param.as_string();
     }
   }
 
@@ -346,26 +341,24 @@ void PerspectiveCamera::build_map() {
   const auto in_idx = this->get_parameter("input.index").as_int();
   const auto in_intr = this->in_calib.intrinsics[in_idx];
   const auto in_extr = this->in_calib.T_i_c[in_idx];
+  const auto in_depth = this->get_parameter("input.depth").as_double();
 
-  auto cmap = this->map.getMat(cv::ACCESS_WRITE);
+  auto map = this->map.getMat(cv::ACCESS_WRITE);
   std::visit(
       [&](const auto &in_cam) {
         std::visit(
             [&](const auto &out_cam) {
-              cmap.forEach<cv::Point2f>([&](auto &val, auto pos) -> void {
-                Eigen::Vector2f p2d(pos[1], pos[0]);
+              map.forEach<cv::Vec2f>([&](auto &mapping, auto pos) -> void {
                 Eigen::Vector3f p3d;
+                auto p2d = Eigen::Map<Eigen::Vector2f>(mapping.val);
 
-                bool good = out_cam.unproject(p2d, p3d);
+                bool good = out_cam.unproject(Eigen::Vector2f{pos[1], pos[0]}, p3d);
                 if (good) {
-                  p3d = in_extr.inverse() * out_extr * p3d;
+                  p3d = in_extr.inverse() * out_extr * (p3d * static_cast<float>(in_depth));
                   good = in_cam.project(p3d, p2d);
-                  val.x = p2d.x();
-                  val.y = p2d.y();
                 }
                 if (!good) {
-                  val.x = -1;
-                  val.y = -1;
+                  p2d.setZero();
                 }
               });
             },
