@@ -30,23 +30,15 @@ SphericalCamera::SphericalCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("input.depth_topic", "");
   this->declare_parameter("input.vignette_threshold", 0.5);
   this->declare_parameter("input.use_mask_as_vignette", false);
+  this->declare_parameter("input.frame_id", "imu");
 
+  this->declare_parameter("output.frame_id", "base_link");
   this->declare_parameter("output.res_x", 0);
   this->declare_parameter("output.res_y", 720);
   this->declare_parameter("output.fov_x", M_PI * 2.0);
   this->declare_parameter("output.fov_y", M_PI);
 
-  this->declare_parameter("output.position",
-                          std::vector<double>{0.0, 0.0, 0.0});
-  this->declare_parameter("output.orientation",
-                          std::vector<double>{0.0, 0.0, 0.0, 1.0});
-
-  this->declare_parameter("output.frame_id", "virtual_camera");
-  this->declare_parameter("frame.base", "base_link");
-  this->declare_parameter("frame.imu", "imu");
-
   this->build_intrinsics();
-  this->build_extrinsics();
   this->initialized = true;
 
   pub = this->create_publisher<sensor_msgs::msg::Image>(
@@ -68,6 +60,22 @@ void SphericalCamera::image_callback(
       RCLCPP_WARN_ONCE(this->get_logger(), "Unable to read exposure time from frame_id, with error \"%s\", no exposure compensation will be applied.", ex.what());
       expos.emplace_back(1.0f);
     }
+  }
+
+  static Sophus::SE3f extr_last;
+  const auto frame_base = this->get_parameter("output.frame_id").as_string();
+  const auto frame_imu = this->get_parameter("input.frame_id").as_string();
+  try {
+    const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
+    auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
+    if (!extr.matrix3x4().cwiseEqual(extr_last.matrix3x4()).all()) {
+      cv::Affine3f::Mat4 extr_mat;
+      cv::eigen2cv(extr.matrix(), extr_mat);
+      this->stitcher.transform(extr_mat);
+      extr_last = extr;
+    }
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_WARN_ONCE(this->get_logger(), "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
   }
 
   auto out_msg = std::make_unique<sensor_msgs::msg::Image>();
@@ -159,20 +167,6 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
         result.reason = "Vignette threshold must be in [0, 1] ";
         return result;
       }
-    } else if (param.get_name() == "output.position") {
-      const auto pos = param.as_double_array();
-      if (pos.size() != 3) {
-        result.successful = false;
-        result.reason = "Position must be a 3-vector [x y z]";
-        return result;
-      }
-    } else if (param.get_name() == "output.orientation") {
-      const auto ori = param.as_double_array();
-      if (ori.size() != 4) {
-        result.successful = false;
-        result.reason = "Orientation must be a quaternion (4-vector [x y z w])";
-        return result;
-      }
     } else if (param.get_name() == "output.res_x") {
       const auto res_x = param.as_int();
       if (res_x <= 0) {
@@ -232,7 +226,7 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
 
 void SphericalCamera::post_set_param_callback(
     const std::vector<rclcpp::Parameter> &params) {
-  bool update_subs = false, update_intr = false, update_extr = false;
+  bool update_subs = false, update_intr = false;
   for (auto &param : params) {
     if (param.get_name() == "input.calibration") {
       this->stitcher.loadCalibration(param.as_string());
@@ -264,11 +258,6 @@ void SphericalCamera::post_set_param_callback(
                param.get_name() == "output.fov_x" ||
                param.get_name() == "output.fov_y") {
       update_intr = true;
-    } else if (param.get_name() == "output.position" ||
-               param.get_name() == "output.orientation" ||
-               param.get_name() == "frame.base" ||
-               param.get_name() == "frame.imu") {
-      update_extr = true;
     }
   }
 
@@ -285,13 +274,8 @@ void SphericalCamera::post_set_param_callback(
         rclcpp::SensorDataQoS());
   }
 
-  if (this->initialized) {
-    if (update_intr) {
-      this->build_intrinsics();
-    }
-    if (update_extr) {
-      this->build_extrinsics();
-    }
+  if (this->initialized && update_intr) {
+    this->build_intrinsics();
   }
 }
 
@@ -319,32 +303,6 @@ void SphericalCamera::build_intrinsics() {
   }
   this->stitcher.resolution(res_x, res_y);
   this->stitcher.fov(fov_x, fov_y);
-}
-
-void SphericalCamera::build_extrinsics() {
-  const auto pos = this->get_parameter("output.position").as_double_array();
-  const auto ori = this->get_parameter("output.orientation").as_double_array();
-
-  const auto frame_base = this->get_parameter("frame.base").as_string();
-  const auto frame_imu = this->get_parameter("frame.imu").as_string();
-
-  Sophus::SE3f extr(Eigen::Quaternionf(ori[3], ori[0], ori[1], ori[2]),
-                    Eigen::Vector3f(pos[0], pos[1], pos[2]));
-
-  try {
-    const auto tf = this->tf_buffer->lookupTransform(
-        frame_imu, frame_base, tf2::TimePointZero, tf2::durationFromSec(0.5));
-    extr =
-        Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>()) * extr;
-  } catch (tf2::TransformException &ex) {
-    RCLCPP_WARN(this->get_logger(),
-                "Could not get transform between %s and %s: %s",
-                frame_base.c_str(), frame_imu.c_str(), ex.what());
-  }
-
-  cv::Affine3f::Mat4 extr_mat;
-  cv::eigen2cv(extr.matrix(), extr_mat);
-  this->stitcher.transform(extr_mat);
 }
 
 } // namespace virtcam
