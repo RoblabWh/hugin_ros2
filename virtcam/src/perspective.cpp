@@ -11,6 +11,8 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
   this->tf_listener =
       std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer);
+  this->tfs_broadcaster =
+      std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
 
   this->pre_set_param_callback_handle =
       this->add_pre_set_parameters_callback(std::bind(
@@ -26,7 +28,9 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("input.calibration", "");
   this->declare_parameter("input.index", 0);
   this->declare_parameter("input.depth", 1.0);
+  this->declare_parameter("input.frame_id", "imu");
 
+  this->declare_parameter("output.frame_id", "virtcam_optical");
   this->declare_parameter("output.type", "pinhole");
   this->declare_parameter("output.res_x", 1280);
   this->declare_parameter("output.res_y", 720);
@@ -34,16 +38,8 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("output.fov_y", 0.0);
   this->declare_parameter("output.intrinsics", std::vector<double>{});
 
-  this->declare_parameter("output.attach_to", std::vector<int>{0});
+  this->declare_parameter("output.attach_to", std::vector{this->get_parameter("input.index").as_int()});
   this->declare_parameter("output.attach_offset", 0.5);
-  this->declare_parameter("output.position",
-                          std::vector<double>{0.0, 0.0, 0.0});
-  this->declare_parameter("output.orientation",
-                          std::vector<double>{0.0, 0.0, 0.0, 1.0});
-
-  this->declare_parameter("output.frame_id", "virtual_camera");
-  this->declare_parameter("frame.base", "base_link");
-  this->declare_parameter("frame.imu", "imu");
 
   this->build_intrinsics();
   this->build_extrinsics();
@@ -60,8 +56,22 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
 
 void PerspectiveCamera::image_callback(
     const sensor_msgs::msg::Image::ConstSharedPtr &in_msg) {
-
   auto in_cvb = cv_bridge::toCvShare(in_msg);
+
+  if (this->get_parameter("output.attach_to").as_integer_array().empty()) {
+    const auto frame_base = this->get_parameter("output.frame_id").as_string();
+    const auto frame_imu = this->get_parameter("input.frame_id").as_string();
+    try {
+      const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
+      const auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
+      if (!extr.matrix3x4().isApprox(this->out_extr.matrix3x4())) {
+        this->out_extr = extr;
+        this->build_map();
+      }
+    } catch (tf2::TransformException &ex) {
+      RCLCPP_WARN_SKIPFIRST_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
+    }
+  }
 
   auto out_msg = std::make_unique<sensor_msgs::msg::Image>();
   out_msg->header.frame_id = this->get_parameter("output.frame_id").as_string();
@@ -136,20 +146,6 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
         result.reason = "Only attaching to up to two cameras is supported";
         return result;
       }
-    } else if (param.get_name() == "output.position") {
-      const auto pos = param.as_double_array();
-      if (pos.size() != 3) {
-        result.successful = false;
-        result.reason = "Position must be a 3-vector [x y z]";
-        return result;
-      }
-    } else if (param.get_name() == "output.orientation") {
-      const auto ori = param.as_double_array();
-      if (ori.size() != 4) {
-        result.successful = false;
-        result.reason = "Orientation must be a quaternion (4-vector [x y z w])";
-        return result;
-      }
     } else if (param.get_name() == "output.res_x") {
       const auto res_x = param.as_int();
       if (res_x <= 0) {
@@ -208,12 +204,10 @@ void PerspectiveCamera::post_set_param_callback(
     } else if (param.get_name() == "input.index" ||
                param.get_name() == "input.depth") {
       build_map = true;
-    } else if (param.get_name() == "output.attach_to" ||
-               param.get_name() == "output.attach_offset" ||
-               param.get_name() == "output.position" ||
-               param.get_name() == "output.orientation" ||
-               param.get_name() == "frame.base" ||
-               param.get_name() == "frame.imu") {
+    } else if (param.get_name() == "input.frame_id" ||
+               param.get_name() == "output.frame_id" ||
+               param.get_name() == "output.attach_to" ||
+               param.get_name() == "output.attach_offset") {
       build_extr = true;
     } else if (param.get_name() == "output.type") {
       const auto type = param.as_string();
@@ -290,50 +284,27 @@ void PerspectiveCamera::build_intrinsics() {
 }
 
 void PerspectiveCamera::build_extrinsics() {
-  const auto pos = this->get_parameter("output.position").as_double_array();
-  const auto ori = this->get_parameter("output.orientation").as_double_array();
+  const auto attach_to = this->get_parameter("output.attach_to").as_integer_array();
 
-  this->out_extr.translation() = Eigen::Vector3f(pos[0], pos[1], pos[2]);
-  this->out_extr.setQuaternion(
-      Eigen::Quaternionf(ori[3], ori[0], ori[1], ori[2]));
-
-  const auto attach_to =
-      this->get_parameter("output.attach_to").as_integer_array();
-  const auto attach_offset =
-      this->get_parameter("output.attach_offset").as_double();
   if (attach_to.size() == 1) {
-    this->out_extr = this->in_calib.T_i_c[attach_to[0]] * this->out_extr;
+    this->out_extr = this->in_calib.T_i_c[attach_to[0]];
   } else if (attach_to.size() == 2) {
+    const auto attach_offset = this->get_parameter("output.attach_offset").as_double();
     const auto &t1 = this->in_calib.T_i_c[attach_to[0]];
     const auto &t2 = this->in_calib.T_i_c[attach_to[1]];
 
-    const auto ti = t1.translation() +
-                    (t2.translation() - t1.translation()) * attach_offset;
-    const auto ri =
-        t1.so3() * t1.so3().exp((t1.so3().inverse() * t2.so3()).log() * 0.5);
-    // TODO above and below do nearly the same
-    //  const auto interpolated = t1 * t1.exp((t1.inverse() * t2).log() * 0.5);
+    const auto ti = t1.translation() + (t2.translation() - t1.translation()) * attach_offset;
+    const auto ri = t1.so3() * t1.so3().exp((t1.so3().inverse() * t2.so3()).log() * 0.5f);
 
-    this->out_extr = Sophus::SE3f(ri, ti) * this->out_extr;
-  } else {
-    const auto frame_base = this->get_parameter("frame.base").as_string();
-    const auto frame_imu = this->get_parameter("frame.imu").as_string();
+    this->out_extr = Sophus::SE3f(ri, ti);
+  }
 
-    Sophus::SE3f tf_imu_base;
-    try {
-      const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base,
-                                                       tf2::TimePointZero);
-      tf_imu_base =
-          Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
-    } catch (tf2::TransformException &ex) {
-      RCLCPP_WARN(this->get_logger(),
-                  "Could not get transform between %s and %s: %s",
-                  frame_base.c_str(), frame_imu.c_str(), ex.what());
-    }
-    this->out_extr = tf_imu_base *
-                     Sophus::SE3f(Eigen::Quaternionf(0.5, -0.5, 0.5, -0.5),
-                                  Eigen::Vector3f::Zero()) *
-                     this->out_extr;
+  if (attach_to.size() >= 1) {
+    auto tf = tf2::eigenToTransform(Eigen::Affine3d(this->out_extr.matrix().cast<double>()));
+    tf.header.stamp = this->get_clock()->now();
+    tf.header.frame_id = this->get_parameter("input.frame_id").as_string();
+    tf.child_frame_id = this->get_parameter("output.frame_id").as_string();
+    this->tfs_broadcaster->sendTransform(tf);
   }
 }
 
@@ -354,7 +325,7 @@ void PerspectiveCamera::build_map() {
 
                 bool good = out_cam.unproject(Eigen::Vector2f{pos[1], pos[0]}, p3d);
                 if (good) {
-                  p3d = in_extr.inverse() * out_extr * (p3d * static_cast<float>(in_depth));
+                  p3d = in_extr.inverse() * this->out_extr * (p3d * static_cast<float>(in_depth));
                   good = in_cam.project(p3d, p2d);
                 }
                 if (!good) {

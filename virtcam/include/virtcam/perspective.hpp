@@ -7,6 +7,7 @@
 #include "basalt/calibration/calibration.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
+#include <tf2_ros/static_transform_broadcaster.hpp>
 
 namespace virtcam {
 
@@ -33,6 +34,7 @@ private:
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tfs_broadcaster;
 
   void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr &msg);
 

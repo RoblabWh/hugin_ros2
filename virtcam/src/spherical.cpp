@@ -32,7 +32,7 @@ SphericalCamera::SphericalCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("input.use_mask_as_vignette", false);
   this->declare_parameter("input.frame_id", "imu");
 
-  this->declare_parameter("output.frame_id", "base_link");
+  this->declare_parameter("output.frame_id", "virtcam_optical");
   this->declare_parameter("output.res_x", 0);
   this->declare_parameter("output.res_y", 720);
   this->declare_parameter("output.fov_x", M_PI * 2.0);
@@ -68,14 +68,14 @@ void SphericalCamera::image_callback(
   try {
     const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
     auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
-    if (!extr.matrix3x4().cwiseEqual(extr_last.matrix3x4()).all()) {
+    if (!extr.matrix3x4().isApprox(extr_last.matrix3x4())) {
       cv::Affine3f::Mat4 extr_mat;
       cv::eigen2cv(extr.matrix(), extr_mat);
       this->stitcher.transform(extr_mat);
       extr_last = extr;
     }
   } catch (tf2::TransformException &ex) {
-    RCLCPP_WARN_ONCE(this->get_logger(), "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
+    RCLCPP_WARN_SKIPFIRST_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
   }
 
   auto out_msg = std::make_unique<sensor_msgs::msg::Image>();
