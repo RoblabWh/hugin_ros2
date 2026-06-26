@@ -4,9 +4,8 @@
 #include "dai_vi.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
-#include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/imu.hpp"
-#include "image_info_msgs/msg/image_info.hpp"
+#include "realsense2_camera_msgs/msg/metadata.hpp"
 
 namespace dai_vi
 {
@@ -15,23 +14,22 @@ namespace dai_vi
   {
   public:
     ROS2Wrapper(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+    ~ROS2Wrapper();
 
   private:
-    std::string cam_prefix;
+    std::string frame_prefix;
     std::string frame_imu;
-    bool tumvi_exposure;
+    bool exposure_in_frame_id;
 
     std::chrono::nanoseconds time_offset;
 
-    std::map<std::string, std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::Image>>> pub_cam_raw;
-    std::map<std::string, std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>>> pub_cam_comp;
-    std::map<std::string, std::shared_ptr<rclcpp::Publisher<image_info_msgs::msg::ImageInfo>>> pub_cam_info;
+    std::map<std::string, std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::Image>>> pub_cam;
+    std::map<std::string, std::shared_ptr<rclcpp::Publisher<realsense2_camera_msgs::msg::Metadata>>> pub_cam_meta;
     std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::Imu>> pub_imu;
 
     std::unique_ptr<dai_vi::SensorWrapper> sensor;
 
-    template <class imgT, bool exact_stamp = false>
-    void publish_images(std::shared_ptr<dai::MessageGroup> msgpack);
+    void publish_img(std::shared_ptr<dai::ImgFrame> img, const std::string &name);
     void publish_imu(const dai::IMUPacket &pkt);
   };
 

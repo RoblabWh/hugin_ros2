@@ -10,3 +10,6 @@
 [submodule "virtcam/thirdparty/PanoWeave"]
 	path = virtcam/thirdparty/PanoWeave
 	url = git@github.com:RoblabWh/PanoWeave.git
+[submodule "realsense-ros"]
+	path = realsense-ros
+	url = https://github.com/realsenseai/realsense-ros.git

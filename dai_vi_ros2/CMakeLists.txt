@@ -10,7 +10,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(image_info_msgs REQUIRED)
+find_package(realsense2_camera_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
 
 # build thirdparty
 set(BUILD_EXEC OFF CACHE BOOL "Only build the library" FORCE)
@@ -28,7 +29,8 @@ ament_target_dependencies(
   "rclcpp"
   "rclcpp_components"
   "sensor_msgs"
-  "image_info_msgs"
+  "realsense2_camera_msgs"
+  "cv_bridge"
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE dai_vi)
 
