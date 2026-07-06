@@ -67,6 +67,11 @@ namespace dai_vi
     declare_parameter("exposure_in_frame_id", false);
     this->exposure_in_frame_id = get_parameter("exposure_in_frame_id").as_bool();
 
+    // device selection
+    declare_parameter("device_id", std::string(""));
+    const auto device_id_ = get_parameter("device_id").as_string();
+    const std::optional<std::string> device_id = device_id_.empty() ? std::nullopt : std::make_optional(device_id_);
+
     // imu
     declare_parameter("imu.hz", 0);
     const auto imu_hz = get_parameter("imu.hz").as_int();
@@ -74,12 +79,14 @@ namespace dai_vi
     // camera general
     declare_parameter("cams", std::vector<int64_t>{0, 1, 2, 3});
     declare_parameter("sync.cams", std::vector<int64_t>{});
+    declare_parameter("sync.on_host", false);
     declare_parameter("sync.hardware", false);
     declare_parameter("sync.generate", false);
     declare_parameter("sync.leon_css", false);
 
     const auto cams = get_parameter("cams").as_integer_array();
     const auto sync_cams = get_parameter("sync.cams").as_integer_array();
+    const auto sync_host = get_parameter("sync.on_host").as_bool();
     const auto sync_hw = get_parameter("sync.hardware").as_bool();
     const auto sync_gen = get_parameter("sync.generate").as_bool();
     const auto sync_css = get_parameter("sync.leon_css").as_bool();
@@ -121,7 +128,7 @@ namespace dai_vi
     time_offset = std::chrono::nanoseconds(ros_time.nanoseconds() - steady_time.time_since_epoch().count());
 
     // Setup DAI-VI sensor
-    sensor = std::make_unique<dai_vi::SensorWrapper>();
+    sensor = std::make_unique<dai_vi::SensorWrapper>(device_id);
 
     if (imu_hz > 0)
     {
@@ -185,6 +192,7 @@ namespace dai_vi
       if (sync_gen && sync_hw) {
         RCLCPP_WARN(this->get_logger(), "Both sync.generate and sync.hardware are set, using sync.generate");
       }
+      sensor->sync_host = sync_host;
       sensor->sync_type = sync_gen  ? SyncType::BOARD
                           : sync_hw ? SyncType::CAMERA
                                     : SyncType::SOFTWARE;
