@@ -11,11 +11,19 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(realsense2_camera_msgs REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
 
 # build thirdparty
 set(BUILD_EXEC OFF CACHE BOOL "Only build the library" FORCE)
 add_subdirectory(thirdparty/dai-vi)
+
+# assert depthai opencv support
+find_package(depthai CONFIG REQUIRED)
+if(NOT DEPTHAI_OPENCV_SUPPORT)
+  message(FATAL_ERROR
+    "dai_vi_ros2 requires depthai built with OpenCV support "
+    "(DEPTHAI_OPENCV_SUPPORT=ON), but the installed depthai reports it OFF.")
+endif()
 
 # build component
 add_library(${PROJECT_NAME} SHARED src/dai_vi_ros2.cpp)
@@ -30,9 +38,8 @@ ament_target_dependencies(
   "rclcpp_components"
   "sensor_msgs"
   "realsense2_camera_msgs"
-  "cv_bridge"
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE dai_vi)
+target_link_libraries(${PROJECT_NAME} PRIVATE dai_vi opencv_core opencv_imgcodecs)
 
 # generate node
 rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "dai_vi::ROS2Wrapper" EXECUTABLE ${PROJECT_NAME}_node EXECUTOR SingleThreadedExecutor)

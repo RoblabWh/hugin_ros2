@@ -1,13 +1,56 @@
 #include "dai_vi_ros2/dai_vi_ros2.hpp"
-#include "cv_bridge/cv_bridge.hpp"
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <cstdint>
 #include <optional>
 #include <sstream>
+#include <vector>
 
 #ifndef NDEBUG
 #define RCLCPP_NDEBUG(logger, fmt, ...) RCLCPP_DEBUG(logger, fmt, __VA_ARGS__)
 #else
 #define RCLCPP_NDEBUG(logger, fmt, ...)
 #endif
+
+namespace {
+class StdVectorAllocator : public cv::MatAllocator {
+  std::vector<std::uint8_t> &buf_;
+
+public:
+  explicit StdVectorAllocator(std::vector<std::uint8_t> &buf) : buf_(buf) {}
+
+  cv::UMatData *allocate(int dims, const int *sizes, int type, void * /*data0*/,
+                         size_t *step, cv::AccessFlag /*flags*/,
+                         cv::UMatUsageFlags /*usageFlags*/) const override {
+    size_t total = CV_ELEM_SIZE(type);
+    for (int i = dims - 1; i >= 0; --i) {
+      if (step) {
+        step[i] =
+            (i == dims - 1) ? CV_ELEM_SIZE(type) : step[i + 1] * sizes[i + 1];
+      }
+      total *= sizes[i];
+    }
+    buf_.resize(total);
+    auto *u = new cv::UMatData(this);
+    u->data = u->origdata = buf_.data();
+    u->size = total;
+    u->flags |= cv::UMatData::USER_ALLOCATED;
+    return u;
+  }
+
+  bool allocate(cv::UMatData *u, cv::AccessFlag,
+                cv::UMatUsageFlags) const override {
+    return u != nullptr;
+  }
+
+  void deallocate(cv::UMatData *u) const override {
+    if (u == nullptr) {
+      return;
+    }
+    delete u;
+  }
+};
+} // namespace
 
 namespace dai_vi
 {
@@ -62,6 +105,7 @@ namespace dai_vi
     for (const auto camid : cams)
     {
       const auto name = "cam" + std::to_string(camid);
+      this->frame_cam[name] = this->frame_prefix + name + "_optical_frame";
       declare_parameter(name + ".hz", cam_hz);
       declare_parameter(name + ".width", cam_width);
       declare_parameter(name + ".height", cam_height);
@@ -161,11 +205,10 @@ namespace dai_vi
     std_msgs::msg::Header header;
     header.stamp = rclcpp::Time((img->getTimestamp().time_since_epoch() + time_offset).count());
 
-    const auto exposure = std::chrono::duration_cast<std::chrono::nanoseconds>(img->getExposureTime()).count();
     if (this->exposure_in_frame_id) {
-      header.frame_id = std::to_string(exposure);
+      header.frame_id = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(img->getExposureTime()).count());
     } else {
-      header.frame_id = this->frame_prefix + name + "_optical_frame";
+      header.frame_id = this->frame_cam[name];
     }
 
     auto &pub_meta = pub_cam_meta[name];
@@ -199,27 +242,33 @@ namespace dai_vi
       pub_meta->publish(std::move(meta_msg));
     }
 
-    auto &pub = pub_cam[name];
-    if (pub->get_subscription_count() > 0) {
+    auto &pub_img = pub_cam[name];
+    if (pub_img->get_subscription_count() > 0) {
       RCLCPP_NDEBUG(this->get_logger(), "<publish_images> stamp=%f dai=%p", rclcpp::Time(header.stamp).seconds(), img->getData().data());
 
       auto img_msg = std::make_unique<sensor_msgs::msg::Image>();
+      StdVectorAllocator alloc(img_msg->data);
       cv::Mat cv_img;
+      cv_img.allocator = &alloc;
       if (img->getType() == dai::ImgFrame::Type::BITSTREAM) {
         const auto bitstream = img->getFrame(false);
         if (bitstream.empty()) {
           RCLCPP_ERROR(this->get_logger(), "Received empty bitstream for camera %s", name.c_str());
           return;
         }
-        cv_img = cv::imdecode(bitstream, cv::IMREAD_UNCHANGED);
+        cv::imdecode(bitstream, cv::IMREAD_UNCHANGED, &cv_img);
       } else {
-        //TODO this extra copy annoys me a lot, maybe build own MatAllocator to use the data directly without copy, but for now this is easier
-        cv_img = img->getCvFrame();
+        cv_img = img->getCvFrame(&alloc);
       }
-      cv_bridge::CvImage(header, cv_img.channels() == 3 ? "bgr8" : "mono8", cv_img).toImageMsg(*img_msg);
 
-      RCLCPP_NDEBUG(this->get_logger(), "<publish_images> stamp=%f msg=%p", rclcpp::Time(header.stamp).seconds(), ros_msg->data.data());
-      pub->publish(std::move(img_msg));
+      img_msg->header = header;
+      img_msg->height = cv_img.rows;
+      img_msg->width = cv_img.cols;
+      img_msg->step = cv_img.step;
+      img_msg->encoding = cv_img.channels() == 3 ? "bgr8" : "mono8";
+
+      RCLCPP_NDEBUG(this->get_logger(), "<publish_images> stamp=%f msg=%p", rclcpp::Time(header.stamp).seconds(), img_msg->data.data());
+      pub_img->publish(std::move(img_msg));
     }
   }
 
