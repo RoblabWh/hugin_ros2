@@ -13,3 +13,6 @@
 [submodule "realsense-ros"]
 	path = realsense-ros
 	url = https://github.com/realsenseai/realsense-ros.git
+[submodule "vision_opencv"]
+	path = vision_opencv
+	url = https://github.com/ros-perception/vision_opencv.git
