@@ -79,6 +79,7 @@ namespace dai_vi
     // camera general
     declare_parameter("cams", std::vector<int64_t>{0, 1, 2, 3});
     declare_parameter("sync.cams", std::vector<int64_t>{});
+    declare_parameter("sync.stamps", true);
     declare_parameter("sync.on_host", false);
     declare_parameter("sync.hardware", false);
     declare_parameter("sync.generate", false);
@@ -86,6 +87,7 @@ namespace dai_vi
 
     const auto cams = get_parameter("cams").as_integer_array();
     const auto sync_cams = get_parameter("sync.cams").as_integer_array();
+    const auto sync_stamps = get_parameter("sync.stamps").as_bool();
     const auto sync_host = get_parameter("sync.on_host").as_bool();
     const auto sync_hw = get_parameter("sync.hardware").as_bool();
     const auto sync_gen = get_parameter("sync.generate").as_bool();
@@ -197,6 +199,7 @@ namespace dai_vi
                           : sync_hw ? SyncType::CAMERA
                                     : SyncType::SOFTWARE;
       sensor->sync_proc = sync_css ? dai::ProcessorType::LEON_CSS : dai::ProcessorType::LEON_MSS;
+      sensor->sync_stamps = sync_stamps;
       sensor->resetCamCallback(std::bind(&ROS2Wrapper::publish_img, this, std::placeholders::_1, std::placeholders::_2));
     }
 
