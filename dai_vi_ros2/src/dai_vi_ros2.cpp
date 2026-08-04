@@ -1,9 +1,12 @@
 #include "dai_vi_ros2/dai_vi_ros2.hpp"
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #ifndef NDEBUG
@@ -50,6 +53,18 @@ public:
     delete u;
   }
 };
+
+  void write_sysfs(const std::string &path, uint64_t value) {
+    std::ofstream file(path);
+    if (!file.is_open()) {
+      throw std::runtime_error("Failed to open sysfs file: " + path);
+    }
+    file << value;
+    file.close();
+    if (!file) {
+      throw std::runtime_error("Failed to write to sysfs file: " + path);
+    }
+  }
 } // namespace
 
 namespace dai_vi
@@ -79,19 +94,26 @@ namespace dai_vi
     // camera general
     declare_parameter("cams", std::vector<int64_t>{0, 1, 2, 3});
     declare_parameter("sync.cams", std::vector<int64_t>{});
+    declare_parameter("sync.type", static_cast<int>(SyncType::SOFTWARE));
     declare_parameter("sync.stamps", true);
     declare_parameter("sync.on_host", false);
-    declare_parameter("sync.hardware", false);
-    declare_parameter("sync.generate", false);
     declare_parameter("sync.leon_css", false);
+    declare_parameter("sync.pwmchip", "");
 
     const auto cams = get_parameter("cams").as_integer_array();
     const auto sync_cams = get_parameter("sync.cams").as_integer_array();
+    const auto sync_type = static_cast<SyncType>(get_parameter("sync.type").as_int());
     const auto sync_stamps = get_parameter("sync.stamps").as_bool();
     const auto sync_host = get_parameter("sync.on_host").as_bool();
-    const auto sync_hw = get_parameter("sync.hardware").as_bool();
-    const auto sync_gen = get_parameter("sync.generate").as_bool();
     const auto sync_css = get_parameter("sync.leon_css").as_bool();
+    const auto sync_pwmchip = get_parameter("sync.pwmchip").as_string();
+    try {
+      const auto id = std::stoul(sync_pwmchip);
+      sysfs_pwmchip = "/sys/class/pwm/pwmchip" + std::to_string(id);
+    } catch (const std::invalid_argument &) {
+      RCLCPP_DEBUG(this->get_logger(), "sync.pwmchip value '%s' is not an integer, using as path", sync_pwmchip.c_str());
+      sysfs_pwmchip = sync_pwmchip;
+    }
 
     // camera defaults
     declare_parameter("cam.hz", 20.0f);
@@ -191,13 +213,8 @@ namespace dai_vi
         pub_cam_meta[name] = create_publisher<realsense2_camera_msgs::msg::Metadata>("~/" + name + "/metadata", rclcpp::SensorDataQoS());
       }
 
-      if (sync_gen && sync_hw) {
-        RCLCPP_WARN(this->get_logger(), "Both sync.generate and sync.hardware are set, using sync.generate");
-      }
+      sensor->sync_type = sync_type;
       sensor->sync_host = sync_host;
-      sensor->sync_type = sync_gen  ? SyncType::BOARD
-                          : sync_hw ? SyncType::CAMERA
-                                    : SyncType::SOFTWARE;
       sensor->sync_proc = sync_css ? dai::ProcessorType::LEON_CSS : dai::ProcessorType::LEON_MSS;
       sensor->sync_stamps = sync_stamps;
       sensor->resetCamCallback(std::bind(&ROS2Wrapper::publish_img, this, std::placeholders::_1, std::placeholders::_2));
@@ -205,11 +222,45 @@ namespace dai_vi
 
     if (!sensor->buildPipeline())
       throw std::invalid_argument("Failed to build pipeline");
+
+    if (sync_type == SyncType::EXTERNAL && !sysfs_pwmchip.empty() && !sync_cams.empty()) {
+      const auto sync_hz = sensor->node_cam[*sensor->sync_cams.begin()]->getMaxRequestedFps();
+      const auto sync_period = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(1.0 / sync_hz));
+      const auto sync_duty = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(1));
+
+      if (std::filesystem::exists(sysfs_pwmchip + "/pwm0")) {
+        throw std::runtime_error(sysfs_pwmchip + " is already in use");
+      }
+      write_sysfs(sysfs_pwmchip + "/export", 0);
+
+      // Wait for the sysfs files to be writable
+      for (uint16_t i = 0; i < 50; ++i) {
+        if (std::ofstream(sysfs_pwmchip + "/pwm0/enable") &&
+            std::ofstream(sysfs_pwmchip + "/pwm0/period") &&
+            std::ofstream(sysfs_pwmchip + "/pwm0/duty_cycle")) {
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+
+      // Cleanup remnants and configure PWM
+      write_sysfs(sysfs_pwmchip + "/pwm0/enable", 0);
+      write_sysfs(sysfs_pwmchip + "/pwm0/duty_cycle", 0);
+      write_sysfs(sysfs_pwmchip + "/pwm0/period", sync_period.count());
+      write_sysfs(sysfs_pwmchip + "/pwm0/duty_cycle", sync_duty.count());
+      write_sysfs(sysfs_pwmchip + "/pwm0/enable", 1);
+    }
+
     sensor->start();
   }
 
   ROS2Wrapper::~ROS2Wrapper() {
     sensor->stop();
+
+    if (sensor->sync_type == SyncType::EXTERNAL && !sysfs_pwmchip.empty()) {
+      write_sysfs(sysfs_pwmchip + "/pwm0/enable", 0);
+      write_sysfs(sysfs_pwmchip + "/unexport", 0);
+    }
   }
 
   void ROS2Wrapper::publish_img(std::shared_ptr<dai::ImgFrame> img, const std::string &name) {

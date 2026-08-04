@@ -32,6 +32,7 @@ namespace dai_vi
     std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::Imu>> pub_imu;
 
     std::unique_ptr<dai_vi::SensorWrapper> sensor;
+    std::string sysfs_pwmchip;
 
     void publish_img(std::shared_ptr<dai::ImgFrame> img, const std::string &name);
     void publish_imu(const dai::IMUPacket &pkt);
