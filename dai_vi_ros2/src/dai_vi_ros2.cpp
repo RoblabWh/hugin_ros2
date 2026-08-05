@@ -123,6 +123,7 @@ namespace dai_vi
     declare_parameter("cam.exposure", 0);
     declare_parameter("cam.iso", 100);
     declare_parameter("cam.encode", -1);
+    declare_parameter("cam.warmup", 0);
 
     const auto cam_hz = get_parameter("cam.hz").as_double();
     const auto cam_width = get_parameter("cam.width").as_int();
@@ -131,6 +132,7 @@ namespace dai_vi
     const auto cam_exposure = get_parameter("cam.exposure").as_int();
     const auto cam_iso = get_parameter("cam.iso").as_int();
     const auto cam_encode = get_parameter("cam.encode").as_int();
+    const auto cam_warmup = get_parameter("cam.warmup").as_int();
 
     // camera per instance
     for (const auto camid : cams)
@@ -144,6 +146,7 @@ namespace dai_vi
       declare_parameter(name + ".exposure", cam_exposure);
       declare_parameter(name + ".iso", cam_iso);
       declare_parameter(name + ".encode", cam_encode);
+      declare_parameter(name + ".warmup", cam_warmup);
     }
 
     // Detect ROS time offset to align with DAI timestamps
@@ -198,9 +201,10 @@ namespace dai_vi
             RCLCPP_WARN(this->get_logger(), "%s: JPEG quality is out of range 0 - 100", name.c_str());
           }
         }
+        const auto warmup = get_parameter(name + ".warmup").as_int();
 
         // Add camera to sensor wrapper
-        auto cam_added = sensor->addCamera(name, static_cast<dai::CameraBoardSocket>(camid), resolution, hz, exposure, iso, color, encode);
+        auto cam_added = sensor->addCamera(name, static_cast<dai::CameraBoardSocket>(camid), resolution, hz, exposure, iso, color, encode, warmup);
         if (!cam_added) {
           throw std::invalid_argument("Failed to create camera!");
         }
