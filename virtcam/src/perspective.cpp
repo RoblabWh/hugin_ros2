@@ -34,7 +34,7 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("output.type", "pinhole");
   this->declare_parameter("output.res_x", 1280);
   this->declare_parameter("output.res_y", 720);
-  this->declare_parameter("output.fov_x", 120.0);
+  this->declare_parameter("output.fov_x", M_PI_2);
   this->declare_parameter("output.fov_y", 0.0);
   this->declare_parameter("output.intrinsics", std::vector<double>{});
 
@@ -160,18 +160,18 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
       const auto fov_x = param.as_double();
       if (fov_x <= 0.0) {
         placeholder_count++;
-      } else if (fov_x >= 180.0) {
+      } else if (fov_x >= M_PI) {
         result.successful = false;
-        result.reason = "Horizontal FOV must be in (0, 180) degrees";
+        result.reason = "Horizontal FOV must be in (0, pi) radians";
         return result;
       }
     } else if (param.get_name() == "output.fov_y") {
       const auto fov_y = param.as_double();
       if (fov_y <= 0.0) {
         placeholder_count++;
-      } else if (fov_y >= 180.0) {
+      } else if (fov_y >= M_PI) {
         result.successful = false;
-        result.reason = "Vertical FOV must be in (0, 180) degrees";
+        result.reason = "Vertical FOV must be in (0, pi) radians";
         return result;
       }
     }
@@ -266,8 +266,8 @@ void PerspectiveCamera::build_intrinsics() {
   const auto cx = res_x / 2.0;
   const auto cy = res_y / 2.0;
 
-  const auto fx = cx / std::tan(fov_x * 0.5 * M_PI / 180.0);
-  const auto fy = cy / std::tan(fov_y * 0.5 * M_PI / 180.0);
+  const auto fx = cx / std::tan(fov_x * 0.5);
+  const auto fy = cy / std::tan(fov_y * 0.5);
 
   this->out_intr.setFromInit(Eigen::Vector4f(fx, fy, cx, cy));
 

@@ -181,18 +181,18 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
       const auto fov_x = param.as_double();
       if (fov_x <= 0.0) {
         placeholder_count++;
-      } else if (fov_x > 360.0) {
+      } else if (fov_x > 2.0 * M_PI) {
         result.successful = false;
-        result.reason = "Horizontal FOV must be in (0, 360] degrees";
+        result.reason = "Horizontal FOV must be in (0, 2*pi] radians";
         return result;
       }
     } else if (param.get_name() == "output.fov_y") {
       const auto fov_y = param.as_double();
       if (fov_y <= 0.0) {
         placeholder_count++;
-      } else if (fov_y > 180.0) {
+      } else if (fov_y > M_PI) {
         result.successful = false;
-        result.reason = "Vertical FOV must be in (0, 180] degrees";
+        result.reason = "Vertical FOV must be in (0, pi] radians";
         return result;
       }
     }
