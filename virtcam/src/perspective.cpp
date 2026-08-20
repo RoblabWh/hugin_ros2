@@ -245,7 +245,7 @@ void PerspectiveCamera::build_intrinsics() {
 
   double aspect;
   if (res_x <= 0 || res_y <= 0) {
-    aspect = fov_x / fov_y;
+    aspect = std::tan(fov_x * 0.5) / std::tan(fov_y * 0.5);
   } else if (fov_x <= 0.0 || fov_y <= 0.0) {
     aspect = static_cast<double>(res_x) / static_cast<double>(res_y);
   }
@@ -258,9 +258,9 @@ void PerspectiveCamera::build_intrinsics() {
   this->map.create(res_y, res_x, CV_32FC2);
 
   if (fov_x <= 0.0) {
-    fov_x = fov_y * aspect;
+    fov_x = 2 * atan(tan(fov_y * 0.5) * aspect);
   } else if (fov_y <= 0.0) {
-    fov_y = fov_x / aspect;
+    fov_y = 2 * atan(tan(fov_x * 0.5) / aspect);
   }
 
   const auto cx = res_x / 2.0;
