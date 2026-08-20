@@ -319,17 +319,18 @@ void PerspectiveCamera::build_map() {
       [&](const auto &in_cam) {
         std::visit(
             [&](const auto &out_cam) {
+              const auto T_in_out = in_extr.inverse() * this->out_extr;
               map.forEach<cv::Vec2f>([&](auto &mapping, auto pos) -> void {
                 Eigen::Vector3f p3d;
                 auto p2d = Eigen::Map<Eigen::Vector2f>(mapping.val);
 
-                bool good = out_cam.unproject(Eigen::Vector2f{pos[1], pos[0]}, p3d);
+                bool good = out_cam.unproject(Eigen::Vector2f{pos[1] + 0.5f, pos[0] + 0.5f}, p3d);
                 if (good) {
-                  p3d = in_extr.inverse() * this->out_extr * (p3d * static_cast<float>(in_depth));
+                  p3d = T_in_out * (p3d * static_cast<float>(in_depth));
                   good = in_cam.project(p3d, p2d);
                 }
                 if (!good) {
-                  p2d.setZero();
+                  p2d.setConstant(-1.0f);
                 }
               });
             },
