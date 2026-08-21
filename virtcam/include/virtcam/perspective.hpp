@@ -46,6 +46,7 @@ private:
   void build_intrinsics();
   void build_extrinsics();
   void build_map();
+  void build_subscription();
 };
 
 } // namespace virtcam

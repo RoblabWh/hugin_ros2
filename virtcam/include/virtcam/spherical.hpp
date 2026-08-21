@@ -46,6 +46,7 @@ private:
   void post_set_param_callback(const std::vector<rclcpp::Parameter> &params);
 
   void build_intrinsics();
+  void build_subscriptions();
 };
 
 } // namespace virtcam

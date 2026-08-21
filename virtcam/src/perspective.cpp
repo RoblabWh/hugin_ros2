@@ -30,7 +30,7 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("input.depth", 1.0);
   this->declare_parameter("input.frame_id", "imu");
 
-  this->declare_parameter("output.frame_id", "virtcam_optical");
+  this->declare_parameter("output.frame_id", std::string(this->get_name()) + "_optical");
   this->declare_parameter("output.type", "pinhole");
   this->declare_parameter("output.res_x", 1280);
   this->declare_parameter("output.res_y", 720);
@@ -44,14 +44,11 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->build_intrinsics();
   this->build_extrinsics();
   this->build_map();
+  this->build_subscription();
   this->initialized = true;
 
-  this->sub = this->create_subscription<sensor_msgs::msg::Image>(
-      "camera/image_raw", rclcpp::SensorDataQoS(),
-      std::bind(&PerspectiveCamera::image_callback, this, std::placeholders::_1));
-
-  pub = this->create_publisher<sensor_msgs::msg::Image>(
-      "virtcam/image_raw", rclcpp::SensorDataQoS());
+  this->pub = this->create_publisher<sensor_msgs::msg::Image>(
+      "~/image_raw", rclcpp::SensorDataQoS());
 }
 
 void PerspectiveCamera::image_callback(
@@ -132,6 +129,22 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
         result.reason = "Calibration file does not exist";
         return result;
       }
+    } else if (param.get_name() == "input.index") {
+      const auto index = param.as_int();
+      const auto num_cams = this->in_calib.num_cams();
+      if (index < 0 || static_cast<size_t>(index) >= num_cams) {
+        result.successful = false;
+        result.reason =
+            "Index must be in [0, " + std::to_string(num_cams - 1) + "]";
+        return result;
+      }
+    } else if (param.get_name() == "input.depth") {
+      const auto depth = param.as_double();
+      if (depth <= 0.0) {
+        result.successful = false;
+        result.reason = "Depth must be positive";
+        return result;
+      }
     } else if (param.get_name() == "output.type") {
       const auto type = param.as_string();
       if (!this->out_intr.isValidType(type)) {
@@ -192,7 +205,7 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
 
 void PerspectiveCamera::post_set_param_callback(
     const std::vector<rclcpp::Parameter> &params) {
-  bool build_intr = false, build_extr = false, build_map = false;
+  bool build_intr = false, build_extr = false, build_map = false, build_sub = false;
 
   for (auto &param : params) {
     if (param.get_name() == "input.calibration") {
@@ -201,9 +214,11 @@ void PerspectiveCamera::post_set_param_callback(
       cereal::JSONInputArchive archive(file);
       archive(this->in_calib);
       build_map = true;
+      build_sub = true;
     } else if (param.get_name() == "input.index" ||
                param.get_name() == "input.depth") {
       build_map = true;
+      build_sub = true;
     } else if (param.get_name() == "input.frame_id" ||
                param.get_name() == "output.frame_id" ||
                param.get_name() == "output.attach_to" ||
@@ -233,6 +248,9 @@ void PerspectiveCamera::post_set_param_callback(
     }
     if (build_map) {
       this->build_map();
+    }
+    if (build_sub) {
+      this->build_subscription();
     }
   }
 }
@@ -337,6 +355,21 @@ void PerspectiveCamera::build_map() {
             out_intr.variant);
       },
       in_intr.variant);
+}
+
+void PerspectiveCamera::build_subscription() {
+  std::string topic = "image_raw";
+  if (!this->in_calib.cam_names.empty()) {
+    const auto index = this->get_parameter("input.index").as_int();
+    const auto topic_ = this->in_calib.cam_names[index];
+    if (!topic_.empty()) {
+      topic = topic_;
+    }
+  }
+  this->sub = this->create_subscription<sensor_msgs::msg::Image>(
+      topic, rclcpp::SensorDataQoS(),
+      std::bind(&PerspectiveCamera::image_callback, this,
+                std::placeholders::_1));
 }
 
 } // namespace virtcam

@@ -24,25 +24,25 @@ SphericalCamera::SphericalCamera(const rclcpp::NodeOptions &options)
                 std::placeholders::_1));
 
   this->initialized = false;
-  this->declare_parameter("input.prefix", "cam");
   this->declare_parameter("input.calibration", "");
+  this->declare_parameter("input.prefix", "cam");
   this->declare_parameter("input.depth", 1.0);
-  this->declare_parameter("input.depth_topic", "");
   this->declare_parameter("input.vignette_threshold", 0.5);
   this->declare_parameter("input.use_mask_as_vignette", false);
   this->declare_parameter("input.frame_id", "imu");
 
-  this->declare_parameter("output.frame_id", "virtcam_optical");
+  this->declare_parameter("output.frame_id", std::string(this->get_name()) + "_optical");
   this->declare_parameter("output.res_x", 0);
   this->declare_parameter("output.res_y", 720);
   this->declare_parameter("output.fov_x", M_PI * 2.0);
   this->declare_parameter("output.fov_y", M_PI);
 
   this->build_intrinsics();
+  this->build_subscriptions();
   this->initialized = true;
 
-  pub = this->create_publisher<sensor_msgs::msg::Image>(
-      "virtcam/image_raw", rclcpp::SensorDataQoS());
+  this->pub = this->create_publisher<sensor_msgs::msg::Image>(
+      "~/image_raw", rclcpp::SensorDataQoS());
 }
 
 void SphericalCamera::image_callback(
@@ -96,14 +96,11 @@ void SphericalCamera::image_callback(
 void SphericalCamera::pre_set_param_callback(
     std::vector<rclcpp::Parameter> &params) {
   bool rx = false, ry = false, fx = false, fy = false;
-  bool dv = false, dt = false;
   for (auto &param : params) {
     rx = rx || param.get_name() == "output.res_x";
     ry = ry || param.get_name() == "output.res_y";
     fx = fx || param.get_name() == "output.fov_x";
     fy = fy || param.get_name() == "output.fov_y";
-    dv = dv || param.get_name() == "input.depth";
-    dt = dt || param.get_name() == "input.depth_topic";
   }
   if (rx || ry || fx || fy) {
     if (!rx) {
@@ -119,17 +116,12 @@ void SphericalCamera::pre_set_param_callback(
       params.push_back(this->get_parameter("output.fov_y"));
     }
   }
-  if (dv && !dt) {
-    params.push_back(rclcpp::Parameter("input.depth_topic", ""));
-  } else if (dt && !dv) {
-    params.push_back(rclcpp::Parameter("input.depth", 0.0));
-  }
 }
 
 rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
     const std::vector<rclcpp::Parameter> &params) {
   rcl_interfaces::msg::SetParametersResult result;
-  uint8_t placeholder_count = 0, depth_set = 0, depth_missing = 0;
+  uint8_t placeholder_count = 0;
 
   for (const auto &param : params) {
     if (param.get_name() == "input.calibration") {
@@ -144,22 +136,6 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
         result.reason = "Calibration file does not exist";
         return result;
       }
-    } else if (param.get_name() == "input.depth") {
-      const auto depth = param.as_double();
-      if (depth < 0.0) {
-        result.successful = false;
-        result.reason = "Depth must be positive";
-        return result;
-      } else if (depth == 0.0) {
-        depth_missing++;
-      }
-      depth_set++;
-    } else if (param.get_name() == "input.depth_topic") {
-      const auto depth_topic = param.as_string();
-      if (depth_topic.empty()) {
-        depth_missing++;
-      }
-      depth_set++;
     } else if (param.get_name() == "input.vignette_threshold") {
       const auto vt = param.as_double();
       if (vt < 0.0 || vt > 1.0) {
@@ -206,19 +182,6 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
     return result;
   }
 
-  if (this->initialized && depth_set > 0) {
-    if (depth_missing == 0) {
-      result.successful = false;
-      result.reason = "At most one of input.depth and input.depth_topic can be "
-                      "set at the same time";
-      return result;
-    } else if (depth_missing == 2) {
-      result.successful = false;
-      result.reason = "Depth must be set as value or as topic";
-      return result;
-    }
-  }
-
   result.successful = true;
   result.reason = "";
   return result;
@@ -226,29 +189,14 @@ rcl_interfaces::msg::SetParametersResult SphericalCamera::on_set_param_callback(
 
 void SphericalCamera::post_set_param_callback(
     const std::vector<rclcpp::Parameter> &params) {
-  bool update_subs = false, update_intr = false;
+  bool build_intr = false, build_subs = false;
   for (auto &param : params) {
     if (param.get_name() == "input.calibration") {
       this->stitcher.loadCalibration(param.as_string());
-      update_subs = true;
-    } else if (param.get_name() == "input.prefix") {
-      update_subs = true;
-    } else if (param.get_name() == "input.depth") {
-      const auto depth = param.as_double();
-      if (depth > 0.0) {
-        this->sub_depth.reset();
-        this->stitcher.setDepth(depth);
-      }
-    } else if (param.get_name() == "input.depth_topic") {
-      const auto depth_topic = param.as_string();
-      if (!depth_topic.empty()) {
-        this->sub_depth = this->create_subscription<sensor_msgs::msg::Image>(
-            depth_topic, rclcpp::SensorDataQoS(),
-            [this](const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
-              const auto cvb = cv_bridge::toCvShare(msg);
-              this->stitcher.setDepth(cvb->image);
-            });
-      }
+      build_subs = true;
+    } else if (param.get_name() == "input.prefix" ||
+               param.get_name() == "input.depth") {
+      build_subs = true;
     } else if (param.get_name() == "input.vignette_threshold") {
       this->stitcher.vignetteThreshold(param.as_double());
     } else if (param.get_name() == "input.use_mask_as_vignette") {
@@ -257,25 +205,17 @@ void SphericalCamera::post_set_param_callback(
                param.get_name() == "output.res_y" ||
                param.get_name() == "output.fov_x" ||
                param.get_name() == "output.fov_y") {
-      update_intr = true;
+      build_intr = true;
     }
   }
 
-  if (update_subs) {
-    std::vector<std::string> topics(this->stitcher.calibration().num_cams());
-    for (std::size_t i = 0; i < topics.size(); ++i) {
-      topics[i] = this->get_parameter("input.prefix").as_string() +
-                  std::to_string(i) + "/image_raw";
+  if (this->initialized) {
+    if (build_intr) {
+      this->build_intrinsics();
     }
-    this->sub_sync = std::make_unique<VariableSynchronizer>(
-        this, topics,
-        std::bind(&SphericalCamera::image_callback, this,
-                  std::placeholders::_1),
-        rclcpp::SensorDataQoS());
-  }
-
-  if (this->initialized && update_intr) {
-    this->build_intrinsics();
+    if (build_subs) {
+      this->build_subscriptions();
+    }
   }
 }
 
@@ -303,6 +243,34 @@ void SphericalCamera::build_intrinsics() {
   }
   this->stitcher.resolution(res_x, res_y);
   this->stitcher.fov(fov_x, fov_y);
+}
+
+void SphericalCamera::build_subscriptions() {
+  std::vector<std::string> topics = this->stitcher.calibration().cam_names;
+  if (topics.empty()) {
+    const auto prefix = this->get_parameter("input.prefix").as_string();
+    topics.resize(this->stitcher.calibration().num_cams());
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+      topics[i] = prefix + std::to_string(i) + "/image_raw";
+    }
+  }
+  this->sub_sync = std::make_unique<VariableSynchronizer>(
+      this, topics,
+      std::bind(&SphericalCamera::image_callback, this, std::placeholders::_1),
+      rclcpp::SensorDataQoS());
+
+  const auto depth = this->get_parameter("input.depth").as_double();
+  this->sub_depth.reset();
+  if (depth > 0.0) {
+    this->stitcher.setDepth(depth);
+  } else {
+    this->sub_depth = this->create_subscription<sensor_msgs::msg::Image>(
+        "depth/image_raw", rclcpp::SensorDataQoS(),
+        [this](const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
+          const auto cvb = cv_bridge::toCvShare(msg);
+          this->stitcher.setDepth(cvb->image);
+        });
+  }
 }
 
 } // namespace virtcam
