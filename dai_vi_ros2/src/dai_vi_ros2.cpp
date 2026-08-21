@@ -84,8 +84,11 @@ namespace dai_vi
 
     // device selection
     declare_parameter("device_id", std::string(""));
+    declare_parameter("usb_speed", 5);
+
     const auto device_id_ = get_parameter("device_id").as_string();
     const std::optional<std::string> device_id = device_id_.empty() ? std::nullopt : std::make_optional(device_id_);
+    const auto usb_speed = static_cast<dai::UsbSpeed>(get_parameter("usb_speed").as_int());
 
     // imu
     declare_parameter("imu.hz", 0);
@@ -155,7 +158,7 @@ namespace dai_vi
     time_offset = std::chrono::nanoseconds(ros_time.nanoseconds() - steady_time.time_since_epoch().count());
 
     // Setup DAI-VI sensor
-    sensor = std::make_unique<dai_vi::SensorWrapper>(device_id);
+    sensor = std::make_unique<dai_vi::SensorWrapper>(device_id, usb_speed);
 
     if (imu_hz > 0)
     {
