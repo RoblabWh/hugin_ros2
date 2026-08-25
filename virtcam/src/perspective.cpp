@@ -38,7 +38,7 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("output.fov_y", 0.0);
   this->declare_parameter("output.intrinsics", std::vector<double>{});
 
-  this->declare_parameter("output.attach_to", std::vector{this->get_parameter("input.index").as_int()});
+  this->declare_parameter("output.attach_to", std::vector<int64_t>{});
   this->declare_parameter("output.attach_offset", 0.5);
 
   this->build_intrinsics();
@@ -55,6 +55,7 @@ void PerspectiveCamera::image_callback(
     const sensor_msgs::msg::Image::ConstSharedPtr &in_msg) {
   auto in_cvb = cv_bridge::toCvShare(in_msg);
 
+  static bool tf_ok = true;
   if (this->get_parameter("output.attach_to").as_integer_array().empty()) {
     const auto frame_base = this->get_parameter("output.frame_id").as_string();
     const auto frame_imu = this->get_parameter("input.frame_id").as_string();
@@ -62,11 +63,18 @@ void PerspectiveCamera::image_callback(
       const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
       const auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
       if (!extr.matrix3x4().isApprox(this->out_extr.matrix3x4())) {
+        if (!tf_ok) {
+          RCLCPP_INFO(this->get_logger(), "Extrinsics updated with transform between \"%s\" and \"%s\"", frame_base.c_str(), frame_imu.c_str());
+          tf_ok = true;
+        }
         this->out_extr = extr;
         this->build_map();
       }
     } catch (tf2::TransformException &ex) {
-      RCLCPP_WARN_SKIPFIRST_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
+      if (tf_ok) {
+        RCLCPP_WARN(this->get_logger(), "Could not get transform between \"%s\" and \"%s\": %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
+        tf_ok = false;
+      }
     }
   }
 
@@ -222,12 +230,13 @@ void PerspectiveCamera::post_set_param_callback(
       std::ifstream file(path);
       cereal::JSONInputArchive archive(file);
       archive(this->in_calib);
-      build_map = true;
+      build_extr = true;
       build_sub = true;
-    } else if (param.get_name() == "input.index" ||
-               param.get_name() == "input.depth") {
-      build_map = true;
+    } else if (param.get_name() == "input.index") {
+      build_extr = true;
       build_sub = true;
+    } else if (param.get_name() == "input.depth") {
+      build_map = true;
     } else if (param.get_name() == "input.frame_id" ||
                param.get_name() == "output.frame_id" ||
                param.get_name() == "output.attach_to" ||
@@ -324,6 +333,9 @@ void PerspectiveCamera::build_extrinsics() {
     const auto ri = t1.so3() * t1.so3().exp((t1.so3().inverse() * t2.so3()).log() * 0.5f);
 
     this->out_extr = Sophus::SE3f(ri, ti);
+  } else {
+    const auto index = this->get_parameter("input.index").as_int();
+    this->out_extr = this->in_calib.T_i_c[index];
   }
 
   if (attach_to.size() >= 1) {
