@@ -159,6 +159,15 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
         result.reason = "Only attaching to up to two cameras is supported";
         return result;
       }
+      const auto num_cams = this->in_calib.num_cams();
+      for (const auto &index : attachments) {
+        if (index < 0 || static_cast<size_t>(index) >= num_cams) {
+          result.successful = false;
+          result.reason = "Attachment indices must be in [0, " +
+                          std::to_string(num_cams - 1) + "]";
+          return result;
+        }
+      }
     } else if (param.get_name() == "output.res_x") {
       const auto res_x = param.as_int();
       if (res_x <= 0) {
