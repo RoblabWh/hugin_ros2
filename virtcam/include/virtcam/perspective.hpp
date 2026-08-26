@@ -43,7 +43,7 @@ private:
   on_set_param_callback(const std::vector<rclcpp::Parameter> &params);
   void post_set_param_callback(const std::vector<rclcpp::Parameter> &params);
 
-  void build_intrinsics();
+  bool build_intrinsics();
   void build_extrinsics();
   void build_map();
   void build_subscription();

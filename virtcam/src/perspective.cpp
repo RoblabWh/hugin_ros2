@@ -41,7 +41,9 @@ PerspectiveCamera::PerspectiveCamera(const rclcpp::NodeOptions &options)
   this->declare_parameter("output.attach_to", std::vector<int64_t>{});
   this->declare_parameter("output.attach_offset", 0.5);
 
-  this->build_intrinsics();
+  if (!this->build_intrinsics()) {
+    throw std::runtime_error("Invalid output camera configuration");
+  }
   this->build_extrinsics();
   this->build_map();
   this->build_subscription();
@@ -190,18 +192,18 @@ rcl_interfaces::msg::SetParametersResult PerspectiveCamera::on_set_param_callbac
       const auto fov_x = param.as_double();
       if (fov_x <= 0.0) {
         placeholder_count++;
-      } else if (fov_x >= M_PI) {
+      } else if (fov_x > 2.0 * M_PI) {
         result.successful = false;
-        result.reason = "Horizontal FOV must be in (0, pi) radians";
+        result.reason = "Horizontal FOV must be in (0, 2*pi] radians";
         return result;
       }
     } else if (param.get_name() == "output.fov_y") {
       const auto fov_y = param.as_double();
       if (fov_y <= 0.0) {
         placeholder_count++;
-      } else if (fov_y >= M_PI) {
+      } else if (fov_y > 2.0 * M_PI) {
         result.successful = false;
-        result.reason = "Vertical FOV must be in (0, pi) radians";
+        result.reason = "Vertical FOV must be in (0, 2*pi] radians";
         return result;
       }
     }
@@ -242,11 +244,8 @@ void PerspectiveCamera::post_set_param_callback(
                param.get_name() == "output.attach_to" ||
                param.get_name() == "output.attach_offset") {
       build_extr = true;
-    } else if (param.get_name() == "output.type") {
-      const auto type = param.as_string();
-      this->out_intr = this->out_intr.fromString(type);
-      build_intr = true;
-    } else if (param.get_name() == "output.res_x" ||
+    } else if (param.get_name() == "output.type" ||
+               param.get_name() == "output.res_x" ||
                param.get_name() == "output.res_y" ||
                param.get_name() == "output.fov_x" ||
                param.get_name() == "output.fov_y" ||
@@ -273,17 +272,62 @@ void PerspectiveCamera::post_set_param_callback(
   }
 }
 
-void PerspectiveCamera::build_intrinsics() {
+bool PerspectiveCamera::build_intrinsics() {
+  const auto type = this->get_parameter("output.type").as_string();
   auto res_x = this->get_parameter("output.res_x").as_int();
   auto res_y = this->get_parameter("output.res_y").as_int();
-  auto fov_x = this->get_parameter("output.fov_x").as_double();
-  auto fov_y = this->get_parameter("output.fov_y").as_double();
+  const auto fov_x = this->get_parameter("output.fov_x").as_double();
+  const auto fov_y = this->get_parameter("output.fov_y").as_double();
+  const auto intr_extra =
+      this->get_parameter("output.intrinsics").as_double_array();
 
-  double aspect;
+  const auto create_camera = [&](float fx, float fy, float cx, float cy) {
+    auto cam = this->out_intr.fromString(type);
+    cam.setFromInit(Eigen::Vector4f(fx, fy, cx, cy));
+    const auto intr_num = cam.getN();
+    Eigen::VectorXf intr_inc = Eigen::VectorXf::Zero(intr_num);
+    for (std::size_t i = 0;
+         i < std::min<std::size_t>(intr_extra.size(), intr_num - 4); ++i) {
+      intr_inc[i + 4] = intr_extra[i] - cam.getParam()[i + 4];
+    }
+    cam.applyInc(intr_inc);
+    return cam;
+  };
+
+  // Probe the projection model with unit focal length and zero centre, so
+  // projecting a bearing yields the image radius in normalized units.
+  auto probe = create_camera(1.0f, 1.0f, 0.0f, 0.0f);
+
+  bool good = true;
+  const auto radius_at = [&](double fov) {
+    const auto half_fov = fov * 0.5;
+    Eigen::Vector2f p2d = Eigen::Vector2f::Zero();
+    good &= probe.project(
+        Eigen::Vector3f(std::sin(half_fov), 0.0f, std::cos(half_fov)), p2d);
+    return static_cast<double>(p2d.x());
+  };
+
+  double aspect = 1.0;
   if (res_x <= 0 || res_y <= 0) {
-    aspect = std::tan(fov_x * 0.5) / std::tan(fov_y * 0.5);
-  } else if (fov_x <= 0.0 || fov_y <= 0.0) {
+    aspect = radius_at(fov_x) / radius_at(fov_y);
+  } else {
     aspect = static_cast<double>(res_x) / static_cast<double>(res_y);
+  }
+  good &= std::isfinite(aspect) && aspect > 0.0;
+
+  const auto rx = fov_x > 0.0 ? radius_at(fov_x) : radius_at(fov_y) * aspect;
+  const auto ry = fov_y > 0.0 ? radius_at(fov_y) : radius_at(fov_x) / aspect;
+
+  Eigen::Vector3f bearing;
+  good &= probe.unproject(Eigen::Vector2f(static_cast<float>(rx), 0.0f), bearing);
+  good &= probe.unproject(Eigen::Vector2f(0.0f, static_cast<float>(ry)), bearing);
+
+  if (!good) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Cannot derive intrinsics from resolution (%ld, %ld) and "
+                 "field of view (%f, %f) with the %s model",
+                 res_x, res_y, fov_x, fov_y, probe.getName().c_str());
+    return false;
   }
 
   if (res_x <= 0) {
@@ -291,32 +335,13 @@ void PerspectiveCamera::build_intrinsics() {
   } else if (res_y <= 0) {
     res_y = static_cast<int>(std::round(res_x / aspect));
   }
+
+  const auto cx = res_x * 0.5;
+  const auto cy = res_y * 0.5;
+
+  this->out_intr = create_camera(cx / rx, cy / ry, cx, cy);
   this->map.create(res_y, res_x, CV_32FC2);
-
-  if (fov_x <= 0.0) {
-    fov_x = 2 * atan(tan(fov_y * 0.5) * aspect);
-  } else if (fov_y <= 0.0) {
-    fov_y = 2 * atan(tan(fov_x * 0.5) / aspect);
-  }
-
-  const auto cx = res_x / 2.0;
-  const auto cy = res_y / 2.0;
-
-  const auto fx = cx / std::tan(fov_x * 0.5);
-  const auto fy = cy / std::tan(fov_y * 0.5);
-
-  this->out_intr.setFromInit(Eigen::Vector4f(fx, fy, cx, cy));
-
-  // Handle additional intrinsics as good as we can
-  const auto intr_extra =
-      this->get_parameter("output.intrinsics").as_double_array();
-  const auto intr_num = this->out_intr.getN();
-  Eigen::VectorXf intr_inc = Eigen::VectorXf::Zero(intr_num);
-  for (std::size_t i = 0;
-       i < std::min<std::size_t>(intr_extra.size(), intr_num - 4); ++i) {
-    intr_inc[i + 4] = intr_extra[i] - this->out_intr.getParam()[i + 4];
-  }
-  this->out_intr.applyInc(intr_inc);
+  return true;
 }
 
 void PerspectiveCamera::build_extrinsics() {
