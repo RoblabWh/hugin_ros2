@@ -17,6 +17,7 @@ public:
 
 private:
   bool initialized;
+  bool tf_ok = true;
   basalt::Calibration<float> in_calib;
   basalt::GenericCamera<float> out_intr;
   Sophus::SE3<float> out_extr;

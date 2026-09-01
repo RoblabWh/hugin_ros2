@@ -62,17 +62,16 @@ void SphericalCamera::image_callback(
     }
   }
 
-  static Sophus::SE3f extr_last;
   const auto frame_base = this->get_parameter("output.frame_id").as_string();
   const auto frame_imu = this->get_parameter("input.frame_id").as_string();
   try {
     const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
     auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
-    if (!extr.matrix3x4().isApprox(extr_last.matrix3x4())) {
+    if (!extr.matrix3x4().isApprox(this->extr_last.matrix3x4())) {
       cv::Affine3f::Mat4 extr_mat;
       cv::eigen2cv(extr.matrix(), extr_mat);
       this->stitcher.transform(extr_mat);
-      extr_last = extr;
+      this->extr_last = extr;
     }
   } catch (tf2::TransformException &ex) {
     RCLCPP_WARN_SKIPFIRST_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Could not get transform between %s and %s: %s", frame_base.c_str(), frame_imu.c_str(), ex.what());

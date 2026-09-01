@@ -57,7 +57,6 @@ void PerspectiveCamera::image_callback(
     const sensor_msgs::msg::Image::ConstSharedPtr &in_msg) {
   auto in_cvb = cv_bridge::toCvShare(in_msg);
 
-  static bool tf_ok = true;
   if (this->get_parameter("output.attach_to").as_integer_array().empty()) {
     const auto frame_base = this->get_parameter("output.frame_id").as_string();
     const auto frame_imu = this->get_parameter("input.frame_id").as_string();
@@ -65,17 +64,17 @@ void PerspectiveCamera::image_callback(
       const auto tf = this->tf_buffer->lookupTransform(frame_imu, frame_base, tf2::TimePointZero);
       const auto extr = Sophus::SE3f(tf2::transformToEigen(tf).matrix().cast<float>());
       if (!extr.matrix3x4().isApprox(this->out_extr.matrix3x4())) {
-        if (!tf_ok) {
+        if (!this->tf_ok) {
           RCLCPP_INFO(this->get_logger(), "Extrinsics updated with transform between \"%s\" and \"%s\"", frame_base.c_str(), frame_imu.c_str());
-          tf_ok = true;
+          this->tf_ok = true;
         }
         this->out_extr = extr;
         this->build_map();
       }
     } catch (tf2::TransformException &ex) {
-      if (tf_ok) {
+      if (this->tf_ok) {
         RCLCPP_WARN(this->get_logger(), "Could not get transform between \"%s\" and \"%s\": %s", frame_base.c_str(), frame_imu.c_str(), ex.what());
-        tf_ok = false;
+        this->tf_ok = false;
       }
     }
   }

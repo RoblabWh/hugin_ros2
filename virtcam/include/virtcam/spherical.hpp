@@ -22,6 +22,7 @@ public:
 private:
   bool initialized;
   panoweave::Stitcher stitcher;
+  Sophus::SE3f extr_last;
 
   std::unique_ptr<VariableSynchronizer> sub_sync;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth;
