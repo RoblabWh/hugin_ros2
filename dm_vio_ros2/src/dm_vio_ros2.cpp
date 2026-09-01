@@ -144,7 +144,7 @@ namespace dmvio
     }
 
     ROS2Wrapper::ROS2Wrapper(const rclcpp::NodeOptions &options)
-        : Node("dm_vio", options), sync_image(this->sub_image, this->sub_image_info, rclcpp::SensorDataQoS().depth()), imuInt(this->frameContainer, nullptr), mainSettings(&(this->dsoSettings))
+        : Node("dm_vio", options), imuInt(this->frameContainer, nullptr), mainSettings(&(this->dsoSettings))
     {
         // declare params
         this->declare_parameter("calibration", "");
@@ -156,7 +156,6 @@ namespace dmvio
         this->declare_parameter("preset", 0);
         this->declare_parameter("use_imu", true);
         this->declare_parameter("use_exposure", true);
-        this->declare_parameter("use_image_info", true);
         this->declare_parameter("quiet", true);
         this->declare_parameter("nolog", true);
         this->declare_parameter("results_path", std::filesystem::temp_directory_path() / "dm_vio_results");
@@ -203,7 +202,6 @@ namespace dmvio
         bool nolog = this->get_parameter("nolog").as_bool();
         bool use_imu = this->get_parameter("use_imu").as_bool();
         bool use_exposure = this->get_parameter("use_exposure").as_bool();
-        bool use_image_info = this->get_parameter("use_image_info").as_bool();
         double imu_noise_factor = this->get_parameter("imu_noise_factor").as_double();
         double imu_bias_factor = this->get_parameter("imu_bias_factor").as_double();
         int candidate_points = this->get_parameter("candidate_points").as_int();
@@ -342,16 +340,7 @@ namespace dmvio
         auto sub_options_image = rclcpp::SubscriptionOptions();
         sub_options_image.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-        if (use_exposure && use_image_info)
-        {
-            this->sub_image.subscribe(this, "image_raw", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-            this->sub_image_info.subscribe(this, "image_info", rclcpp::SensorDataQoS().get_rmw_qos_profile(), sub_options_image);
-            this->sync_image.registerCallback(std::bind(&ROS2Wrapper::callbackImageExposure, this, std::placeholders::_1, std::placeholders::_2));
-        }
-        else
-        {
-            this->sub_img = this->create_subscription<sensor_msgs::msg::Image>("image_raw", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1), sub_options_image);
-        }
+        this->sub_img = this->create_subscription<sensor_msgs::msg::Image>("image_raw", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackImage, this, std::placeholders::_1), sub_options_image);
         this->sub_imu = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(), std::bind(&ROS2Wrapper::callbackIMU, this, std::placeholders::_1), sub_options_imu);
 
         this->pub_system_state = this->create_publisher<dm_vio_msgs::msg::DMVIOState>("tracking_state", rclcpp::SensorDataQoS());
@@ -861,28 +850,14 @@ namespace dmvio
         }
     }
 
-    void ROS2Wrapper::callbackImageExposure(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img, const image_info_msgs::msg::ImageInfo::ConstSharedPtr &msg_info)
-    {
-        const double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + this->camTimeOffset;
-        const auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
-        const auto minImg = dso::MinimalImageB((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
-        auto undistImg = std::unique_ptr<dso::ImageAndExposure>(this->undistorter->undistort<unsigned char>(&minImg, rclcpp::Time(msg_info->exposure).seconds() * 1e3, timestamp, 1.0f));
-
-        RCLCPP_NDEBUG(get_logger(), "<callbackImageExposure> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
-                      rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
-
-        this->imuInt.addImage(std::move(undistImg), timestamp);
-    }
-
     void ROS2Wrapper::callbackImage(const sensor_msgs::msg::Image::ConstSharedPtr &msg_img)
     {
-        static auto exposure = std::make_shared<image_info_msgs::msg::ImageInfo>();
-        exposure->header = msg_img->header;
+        double exposure = 0.0;
         if (this->dsoSettings.useExposure)
         {
             try
             {
-                exposure->exposure = rclcpp::Time(std::stol(msg_img->header.frame_id));
+                exposure = std::stol(msg_img->header.frame_id) * 1e-6;
             }
             catch (const std::exception &e)
             {
@@ -890,7 +865,15 @@ namespace dmvio
             }
         }
 
-        this->callbackImageExposure(msg_img, exposure);
+        const double timestamp = rclcpp::Time(msg_img->header.stamp).seconds() + this->camTimeOffset;
+        const auto cv_ptr = cv_bridge::toCvShare(msg_img, sensor_msgs::image_encodings::MONO8);
+        const auto minImg = dso::MinimalImageB((int)cv_ptr->image.cols, (int)cv_ptr->image.rows, (unsigned char *)cv_ptr->image.data);
+        auto undistImg = std::unique_ptr<dso::ImageAndExposure>(this->undistorter->undistort<unsigned char>(&minImg, exposure, timestamp, 1.0f));
+
+        RCLCPP_NDEBUG(get_logger(), "<callbackImage> stamp=%f\n\t\tmsg\t=\t%p\n\t\tcv\t=\t%p\n\t\tminimg\t=\t%p\n\t\tundist\t=\t%p",
+                      rclcpp::Time(msg_img->header.stamp).seconds(), msg_img->data.data(), cv_ptr->image.data, minImg.data, undistImg->image);
+
+        this->imuInt.addImage(std::move(undistImg), timestamp);
     }
 
     void ROS2Wrapper::callbackIMU(const sensor_msgs::msg::Imu::ConstSharedPtr &msg)
@@ -981,8 +964,6 @@ namespace dmvio
             // Explicitly stop subscriptions to avoid leaking memory
             this->sub_imu.reset();
             this->sub_img.reset();
-            this->sub_image.unsubscribe();
-            this->sub_image_info.unsubscribe();
         }
         this->fullSystem->blockUntilMappingIsFinished();
 
