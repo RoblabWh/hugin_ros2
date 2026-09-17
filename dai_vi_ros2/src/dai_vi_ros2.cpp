@@ -54,6 +54,19 @@ public:
   }
 };
 
+  uint64_t read_sysfs(const std::string &path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+      throw std::runtime_error("Failed to open sysfs file: " + path);
+    }
+    uint64_t value;
+    file >> value;
+    if (!file) {
+      throw std::runtime_error("Failed to read from sysfs file: " + path);
+    }
+    return value;
+  }
+
   void write_sysfs(const std::string &path, uint64_t value) {
     std::ofstream file(path);
     if (!file.is_open()) {
@@ -250,9 +263,12 @@ namespace dai_vi
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
 
-      // Cleanup remnants and configure PWM
-      write_sysfs(sysfs_pwmchip + "/pwm0/enable", 0);
-      write_sysfs(sysfs_pwmchip + "/pwm0/duty_cycle", 0);
+      // Cleanup remnants
+      if (read_sysfs(sysfs_pwmchip + "/pwm0/period") != 0) {
+        write_sysfs(sysfs_pwmchip + "/pwm0/enable", 0);
+        write_sysfs(sysfs_pwmchip + "/pwm0/duty_cycle", 0);
+      }
+      // Configure PWM
       write_sysfs(sysfs_pwmchip + "/pwm0/period", sync_period.count());
       write_sysfs(sysfs_pwmchip + "/pwm0/duty_cycle", sync_duty.count());
       write_sysfs(sysfs_pwmchip + "/pwm0/enable", 1);
