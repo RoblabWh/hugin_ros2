@@ -16,3 +16,9 @@
 [submodule "vision_opencv"]
 	path = vision_opencv
 	url = https://github.com/ros-perception/vision_opencv.git
+[submodule "cairn/thirdparty/cuVSLAM"]
+	path = cairn/thirdparty/cuVSLAM
+	url = https://github.com/nvidia-isaac/cuVSLAM.git
+[submodule "cairn/thirdparty/basalt-headers"]
+	path = cairn/thirdparty/basalt-headers
+	url = https://github.com/RoblabWh/basalt-headers.git

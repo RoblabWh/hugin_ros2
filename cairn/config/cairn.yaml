@@ -1,0 +1,66 @@
+/**:
+  ros__parameters:
+    # --- required ---------------------------------------------------------------------------
+    # Path to a basalt calibration.json.
+    calibration_file: ""
+
+    # --- rig placement ----------------------------------------------------------------------
+    # Which calibration frame the cuVSLAM rig sits on: "auto" derives it from calibration,
+    # "imu" (rig_from_camera == T_imu_cam, an identity conversion) or "cam0".
+    rig_reference: "auto"
+    # TF name of that frame. Empty (the default) reads it from the sensor messages.
+    reference_frame: "base_link"
+    # When set, the rig is re-based onto this frame using a TF lookup.
+    base_frame: ""
+    tf_lookup_timeout_s: 5.0
+
+    map_frame: "map"
+    odom_frame: "odom"
+
+    # --- tracking ---------------------------------------------------------------------------
+    # auto | multicamera | inertial | mono | multisensor. auto: 1 cam -> mono, 2 cams + IMU ->
+    # inertial, 3+ cams + IMU -> multisensor, otherwise multicamera.
+    # multisensor is the only mode that fuses an IMU on more than two cameras, inertial is
+    # stereo-only, and multicamera discards the IMU. Two caveats: cuVSLAM marks multisensor as
+    # experimental, and its cuNLS solver supports pinhole cameras only.
+    odometry_mode: "auto"
+    multicam_mode: "precision"   # precision | performance | moderate
+    use_imu: true
+    enable_slam: true            # cuvslam::Slam loop closure -> map -> odom TF
+    slam_max_map_size: 300
+    slam_throttling_time_ms: 500
+    verbosity: 0                 # cuvslam::SetVerbosity
+
+    # --- IMU noise --------------------------------------------------------------------------
+    imu_noise_scale: 2.0
+    # Absolute overrides. Negative means override disabled.
+    gyroscope_noise_density: -1.0
+    gyroscope_random_walk: -1.0
+    accelerometer_noise_density: -1.0
+    accelerometer_random_walk: -1.0
+
+    # --- topics -----------------------------------------------------------------------------
+    image_qos: "SENSOR_DATA"     # SENSOR_DATA | DEFAULT | SYSTEM_DEFAULT
+    imu_qos: "SENSOR_DATA"
+
+    # --- synchronisation --------------------------------------------------------------------
+    # cuVSLAM rejects frame sets spanning more than 1 ms, so values above that are clamped.
+    sync_threshold_ms: 1.0
+    # How many cameras must match for a frame set to be used. 0 for all.
+    min_num_images: 0
+    image_buffer_size: 10
+    imu_buffer_size: 100
+    # Feeds cuvslam::Odometry::Config::max_frame_delta_s.
+    image_jitter_threshold_ms: 34.0
+    apply_cam_time_offset: true
+
+    # --- output -----------------------------------------------------------------------------
+    publish_odom_tf: true
+    publish_map_tf: true
+    # Rate limit for ~/path and ~/slam_path.
+    path_publish_rate_hz: 5.0
+
+    # --- debug views ------------------------------------------------------------------------
+    # Advertised only when the export below is on.Enabling SLAM turns it on, so this only
+    # matters when running pure odometry.
+    debug_exports: true
