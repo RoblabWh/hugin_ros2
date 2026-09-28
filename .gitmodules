@@ -1,15 +1,15 @@
 [submodule "dai_vi_ros2/thirdparty/dai-vi"]
 	path = dai_vi_ros2/thirdparty/dai-vi
-	url = git@github.com:RoblabWh/dai-vi.git
+	url = https://github.com/RoblabWh/dai-vi.git
 [submodule "dm_vio_ros2/thirdparty/dm-vio"]
 	path = dm_vio_ros2/thirdparty/dm-vio
-	url = git@github.com:RoblabWh/dm-vio.git
+	url = https://github.com/RoblabWh/dm-vio.git
 [submodule "robot_localization"]
 	path = robot_localization
-	url = git@github.com:RoblabWh/robot_localization.git
+	url = https://github.com/RoblabWh/robot_localization.git
 [submodule "virtcam/thirdparty/PanoWeave"]
 	path = virtcam/thirdparty/PanoWeave
-	url = git@github.com:RoblabWh/PanoWeave.git
+	url = https://github.com/RoblabWh/PanoWeave.git
 [submodule "realsense-ros"]
 	path = realsense-ros
 	url = https://github.com/realsenseai/realsense-ros.git
